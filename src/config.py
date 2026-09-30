@@ -1,0 +1,92 @@
+"""Validated, side-effect-free application configuration."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SUPPORTED_DOMAINS = ("com", "ca", "co.uk", "de", "fr", "it", "ae")
+
+
+class ConfigurationError(ValueError):
+    """Raised when an environment setting is unsafe or invalid."""
+
+
+def _positive_int(name: str, default: int, *, minimum: int = 1) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be an integer") from exc
+    if value < minimum:
+        raise ConfigurationError(f"{name} must be at least {minimum}")
+    return value
+
+
+def _positive_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+    raw = os.getenv(name, str(default))
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be a number") from exc
+    if value < minimum:
+        raise ConfigurationError(f"{name} must be at least {minimum}")
+    return value
+
+
+def _bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, str(default)).strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"{name} must be a boolean")
+
+
+@dataclass(frozen=True, slots=True)
+class Settings:
+    database_path: Path
+    browser_headless: bool
+    browser_binary: str | None
+    page_timeout_seconds: int
+    element_timeout_seconds: int
+    job_timeout_seconds: int
+    min_navigation_interval_seconds: float
+    max_queue_size: int
+    max_search_pages: int
+    max_search_queries: int
+    max_competitors: int
+    openai_model: str
+    artifact_dir: Path
+    strict_sqlite_version: bool
+
+
+def get_settings() -> Settings:
+    """Load local settings without opening a database or browser."""
+    load_dotenv(PROJECT_ROOT / ".env")
+    database_path = Path(os.getenv("APP_DATABASE_PATH", "data/amazon_competitor.sqlite3"))
+    if not database_path.is_absolute():
+        database_path = PROJECT_ROOT / database_path
+    artifact_dir = Path(os.getenv("APP_ARTIFACT_DIR", "artifacts"))
+    if not artifact_dir.is_absolute():
+        artifact_dir = PROJECT_ROOT / artifact_dir
+    return Settings(
+        database_path=database_path,
+        browser_headless=_bool("APP_BROWSER_HEADLESS", True),
+        browser_binary=os.getenv("APP_BROWSER_BINARY") or None,
+        page_timeout_seconds=_positive_int("APP_PAGE_TIMEOUT_SECONDS", 30),
+        element_timeout_seconds=_positive_int("APP_ELEMENT_TIMEOUT_SECONDS", 10),
+        job_timeout_seconds=_positive_int("APP_JOB_TIMEOUT_SECONDS", 900),
+        min_navigation_interval_seconds=_positive_float("APP_MIN_NAVIGATION_INTERVAL_SECONDS", 2.0),
+        max_queue_size=_positive_int("APP_MAX_QUEUE_SIZE", 20),
+        max_search_pages=_positive_int("APP_MAX_SEARCH_PAGES", 2),
+        max_search_queries=_positive_int("APP_MAX_SEARCH_QUERIES", 3),
+        max_competitors=_positive_int("APP_MAX_COMPETITORS", 20),
+        openai_model=os.getenv("APP_OPENAI_MODEL", "gpt-4o-mini").strip(),
+        artifact_dir=artifact_dir,
+        strict_sqlite_version=_bool("APP_STRICT_SQLITE_VERSION", False),
+    )

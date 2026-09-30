@@ -1,0 +1,37 @@
+services:
+  migrate:
+    build: .
+    command: ["uv", "run", "python", "-m", "scripts.db_admin", "migrate"]
+    env_file: .env
+    environment:
+      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
+    volumes:
+      - app-data:/app/data
+
+  app:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - app-data:/app/data
+
+  worker:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["uv", "run", "python", "-m", "src.worker"]
+    env_file: .env
+    environment:
+      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
+    volumes:
+      - app-data:/app/data
+
+volumes:
+  app-data:
