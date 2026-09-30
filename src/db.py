@@ -356,6 +356,16 @@ class SQLiteRepository:
             row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         return self._job(row) if row else None
 
+    def latest_job_for_context(self, context_id: int, kind: JobKind) -> Job | None:
+        self.migrate()
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE context_id=? AND kind=? "
+                "ORDER BY created_at DESC,id DESC LIMIT 1",
+                (context_id, kind.value),
+            ).fetchone()
+        return self._job(row) if row else None
+
     def claim_next_job(self, worker_id: str, lease_seconds: int = 60) -> Job | None:
         del worker_id
         self.migrate()
@@ -613,9 +623,16 @@ class SQLiteRepository:
         return result
 
     def default_tracked_context_id(self) -> int | None:
-        """Open the most recently analyzed tracked product, or the newest tracked product."""
+        """Open the tracked product with the newest completed work."""
         self.migrate()
         with self.connection() as conn:
+            worked = conn.execute(
+                "SELECT c.id FROM jobs j JOIN product_contexts c ON c.id=j.context_id "
+                "WHERE c.is_tracked=1 AND j.status IN ('succeeded','partial') "
+                "ORDER BY j.finished_at DESC,j.created_at DESC,j.id DESC LIMIT 1"
+            ).fetchone()
+            if worked:
+                return int(worked["id"])
             analyzed = conn.execute(
                 "SELECT c.id FROM analyses a "
                 "JOIN competitor_runs r ON r.id=a.competitor_run_id "

@@ -185,6 +185,10 @@ def render_last_job(repo: SQLiteRepository) -> None:
     job = repo.get_job(job_id)
     if not job:
         return
+    latest = repo.latest_job_for_context(job.context_id, job.kind)
+    if latest and latest.id != job.id:
+        job = latest
+        st.session_state["last_job_id"] = latest.id
     status = f"Job {job.id}: {job.status.value} ({job.progress}%)"
     if job.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
         st.progress(job.progress, text=status)

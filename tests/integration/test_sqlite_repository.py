@@ -75,6 +75,7 @@ def test_context_identity_snapshot_history_and_job_idempotency(tmp_path: Path) -
     claimed = repo.claim_next_job("test-worker")
     assert claimed and claimed.status == JobStatus.RUNNING and claimed.lease_token
     assert repo.finish_job(claimed.id, claimed.lease_token, JobStatus.SUCCEEDED)
+    assert repo.latest_job_for_context(first.id, JobKind.SCRAPE_PRODUCT) == repo.get_job(claimed.id)
     assert repo.health()["integrity_check"] == "ok"
 
 
@@ -153,7 +154,9 @@ def test_partial_competitor_evidence_can_be_analyzed_without_replacing_complete_
     assert evidence["product"]["title"] == "Example product"
     assert evidence["competitors"][0]["asin"] == "B0DLBH8CBZ"
     assert evidence["rules"]["competitor_run_status"] == "partial"
-    assert enqueue_analysis(repo, parent.id).kind == JobKind.ANALYZE
+    analysis_job = enqueue_analysis(repo, parent.id)
+    assert analysis_job.kind == JobKind.ANALYZE
+    assert repo.cancel_job(analysis_job.id)
 
     repo.save_analysis(
         frozen_parent_id,
@@ -164,8 +167,13 @@ def test_partial_competitor_evidence_can_be_analyzed_without_replacing_complete_
     )
     analysis = repo.latest_analysis(parent.id)
     assert analysis and analysis["output"]["summary"] == "Limited evidence"
-    repo.get_or_create_context(ProductKey("B0CX23VSAS", "com"), "90210", tracked=True)
+    newer = repo.get_or_create_context(ProductKey("B0CX23VSAS", "com"), "90210", tracked=True)
     assert repo.default_tracked_context_id() == parent.id
+    later_job = repo.enqueue_job(JobKind.SCRAPE_PRODUCT, newer.id, "scrape-product")
+    claimed_later = repo.claim_next_job("test-worker")
+    assert claimed_later and claimed_later.id == later_job.id and claimed_later.lease_token
+    assert repo.finish_job(claimed_later.id, claimed_later.lease_token, JobStatus.SUCCEEDED)
+    assert repo.default_tracked_context_id() == newer.id
 
 
 def test_amazon_in_migration_preserves_existing_relationships(tmp_path: Path) -> None:
