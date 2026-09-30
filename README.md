@@ -56,10 +56,12 @@ Review the dry-run report first. The importer records file-hash and record IDs s
 
 This release is designed for one host, one worker, one active browser job, and a persistent local SQLite volume. The database must be on a local filesystem. Run `uv run python -m scripts.db_admin health` before deployment and use SQLite 3.51.3 or a documented backport of its WAL-reset fix with `APP_STRICT_SQLITE_VERSION=true` in production.
 
-`docker compose build` and `docker compose up -d` start the migration, UI, and worker services. The supplied configuration binds Streamlit to localhost. Add an authenticated TLS gateway before public exposure.
+`docker compose build` and `docker compose up -d` start the migration, UI, worker, and a visible Selenium browser. Streamlit is at `http://localhost:8501`; the browser view is at `http://localhost:7900`. Both ports bind to localhost. Set `APP_BROWSER_VNC_PASSWORD` in `.env` before starting the stack (the example default is `secret`). The browser profile persists in the `browser-profiles` volume, and a competitor refresh uses one browser session instead of starting a browser for every listing.
+
+If Amazon shows a CAPTCHA or sign-in check, the job displays a link to that live browser. Open it, click **Connect**, complete the check yourself, and the job resumes automatically. The job waits for up to five minutes across its human checks, then pauses scraping for a five-minute marketplace cooldown. A partial refresh keeps the previous complete run. Do not expose port 7900 publicly; add an authenticated TLS gateway if remote access is required.
 
 ## Limits
 
-Selenium does not guarantee Amazon access. CAPTCHA, sign-in, blocked pages, unsupported delivery controls, price/variant differences, and selector changes are recorded as failures or partial results. The app does not use stealth automation, proxy rotation, CAPTCHA solving, or direct HTTP scrape fallbacks. Prices are not currency-converted, and the LLM’s recommendations are generated interpretation rather than verified marketplace facts. Groq provides hosted inference and its free tier is rate-limited; the hosted API is not itself open source.
+Selenium does not guarantee Amazon access. CAPTCHA, sign-in, blocked pages, unsupported delivery controls, price/variant differences, and selector changes are recorded as failures or partial results. A genuine CAPTCHA needs a human in the visible browser. The app does not use stealth automation, proxy rotation, CAPTCHA solving, or direct HTTP scrape fallbacks. Prices are not currency-converted, and the LLM’s recommendations are generated interpretation rather than verified marketplace facts. Groq provides hosted inference and its free tier is rate-limited; the hosted API is not itself open source.
 
 See [architecture](docs/architecture.md), [operations](docs/operations.md), and [validation](docs/validation.md) for the data model, runbook, and verification evidence.

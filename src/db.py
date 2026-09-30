@@ -315,6 +315,8 @@ class SQLiteRepository:
         options: dict[str, Any] | None = None,
     ) -> Job:
         self.migrate()
+        if kind != JobKind.ANALYZE:
+            self.ensure_scraping_available(context_id)
         if not request_key or len(request_key) > 128:
             raise DatabaseError("A bounded request key is required")
         with self.transaction() as conn:
@@ -392,6 +394,55 @@ class SQLiteRepository:
             claimed = conn.execute("SELECT * FROM jobs WHERE id=?", (row["id"],)).fetchone()
         assert claimed is not None
         return self._job(claimed)
+
+    def ensure_scraping_available(self, context_id: int) -> None:
+        self.migrate()
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT p.amazon_domain,m.blocked_until FROM product_contexts c "
+                "JOIN products p ON p.id=c.product_id "
+                "JOIN marketplace_cooldowns m ON m.amazon_domain=p.amazon_domain "
+                "WHERE c.id=? AND m.blocked_until>?",
+                (context_id, iso()),
+            ).fetchone()
+        if row:
+            remaining = max(
+                1, int((datetime.fromisoformat(row["blocked_until"]) - utc_now()).total_seconds())
+            )
+            raise DatabaseError(
+                f"Amazon.{row['amazon_domain']} scraping is cooling down after a browser challenge. "
+                f"Retry in {remaining} seconds. Saved evidence remains available for analysis."
+            )
+
+    def set_scraping_cooldown(self, context_id: int) -> None:
+        context = self.get_context(context_id)
+        if context:
+            with self.transaction() as conn:
+                conn.execute(
+                    "INSERT INTO marketplace_cooldowns(amazon_domain,blocked_until) VALUES (?,?) "
+                    "ON CONFLICT(amazon_domain) DO UPDATE SET blocked_until=excluded.blocked_until",
+                    (
+                        context.key.domain,
+                        iso(utc_now() + timedelta(seconds=self.settings.block_cooldown_seconds)),
+                    ),
+                )
+
+    def set_challenge_notice(self, job_id: str, lease_token: str, waiting: bool) -> bool:
+        with self.transaction() as conn:
+            updated = conn.execute(
+                "UPDATE jobs SET error_code=?,error_message=? "
+                "WHERE id=? AND status='running' AND lease_token=?",
+                (
+                    "challenge_waiting" if waiting else None,
+                    "Amazon requires a human check. Open the scraping browser and complete it; "
+                    "this job will continue automatically."
+                    if waiting
+                    else None,
+                    job_id,
+                    lease_token,
+                ),
+            )
+        return updated.rowcount == 1
 
     def heartbeat(
         self, job_id: str, lease_token: str, progress: int, lease_seconds: int = 60

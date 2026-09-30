@@ -1,7 +1,7 @@
 import hashlib
 import sqlite3
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -77,6 +77,32 @@ def test_context_identity_snapshot_history_and_job_idempotency(tmp_path: Path) -
     assert repo.finish_job(claimed.id, claimed.lease_token, JobStatus.SUCCEEDED)
     assert repo.latest_job_for_context(first.id, JobKind.SCRAPE_PRODUCT) == repo.get_job(claimed.id)
     assert repo.health()["integrity_check"] == "ok"
+
+
+def test_challenge_notice_and_cooldown_survive_repository_restart(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path / "cooldown.sqlite3")
+    repo = SQLiteRepository(settings)
+    context = repo.get_or_create_context(ProductKey("B0CX23VSAS", "com"), None, tracked=True)
+    repo.enqueue_job(JobKind.SCRAPE_PRODUCT, context.id, "scrape-product")
+    job = repo.claim_next_job("worker")
+    assert job and job.lease_token
+    assert repo.set_challenge_notice(job.id, job.lease_token, True)
+    waiting = repo.get_job(job.id)
+    assert waiting and waiting.status == JobStatus.RUNNING
+    assert waiting.error_code == "challenge_waiting"
+    assert repo.set_challenge_notice(job.id, job.lease_token, False)
+    repo.set_scraping_cooldown(context.id)
+    restarted = SQLiteRepository(settings)
+    with pytest.raises(DatabaseError, match="cooling down"):
+        restarted.enqueue_job(JobKind.DISCOVER_COMPETITORS, context.id, "discover")
+    # Groq can still use saved evidence while collection is cooling down.
+    restarted.enqueue_job(JobKind.ANALYZE, context.id, "analyze")
+    with restarted.transaction() as conn:
+        conn.execute(
+            "UPDATE marketplace_cooldowns SET blocked_until=?",
+            ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(),),
+        )
+    restarted.ensure_scraping_available(context.id)
 
 
 def test_rollback_does_not_persist_changes(tmp_path: Path) -> None:
@@ -240,7 +266,7 @@ def test_amazon_in_migration_preserves_existing_relationships(tmp_path: Path) ->
         assert conn.execute("SELECT COUNT(*) FROM legacy_imports").fetchone()[0] == 1
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 3
     repo.migrate()  # A restarted app must not replay the table rebuild.
 
 
@@ -266,4 +292,4 @@ def test_failed_migration_rolls_back_every_statement(
             conn.execute("SELECT name FROM sqlite_master WHERE name='migration_probe'").fetchone()
             is None
         )
-        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 3

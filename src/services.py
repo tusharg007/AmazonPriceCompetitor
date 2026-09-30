@@ -105,6 +105,12 @@ def discover_competitors(
     candidates, failures = scraper.discover(
         parent, normalized_query(title), settings.max_search_pages
     )
+    if not candidates and not failures:
+        failures.append(
+            ItemFailure(
+                None, ScrapeErrorCode.PARSE_ERROR, "Amazon search returned no product listings"
+            )
+        )
     candidates = [candidate for candidate in candidates if not candidate.sponsored][
         : settings.max_competitors
     ]
@@ -133,6 +139,9 @@ def discover_competitors(
             )
         if failure:
             failures.append(failure)
+            if failure.code in {ScrapeErrorCode.BLOCKED, ScrapeErrorCode.CANCELLED}:
+                # Do not keep navigating after Amazon blocks this shared session.
+                break
         progress(int(index / total * 90) + 5)
     status = JobStatus.SUCCEEDED if not failures else JobStatus.PARTIAL
     if not candidates and failures:

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from urllib.parse import quote_plus, urlparse
 
@@ -151,12 +152,15 @@ def _all_text(driver: WebDriver, selector_group: tuple[str, ...]) -> tuple[str, 
 
 
 def _check_page_state(driver: WebDriver) -> None:
-    source = driver.page_source.lower()
-    if any(driver.find_elements(By.CSS_SELECTOR, selector) for selector in selectors.BLOCK_MARKERS):
+    if any(
+        element.is_displayed()
+        for selector in selectors.BLOCK_MARKERS
+        for element in driver.find_elements(By.CSS_SELECTOR, selector)
+    ):
         raise ScrapingError(
             ScrapeErrorCode.BLOCKED, "Amazon presented a CAPTCHA, sign-in, or access block"
         )
-    if "robot check" in driver.title.lower() or "enter the characters you see" in source:
+    if "robot check" in driver.title.lower():
         raise ScrapingError(ScrapeErrorCode.BLOCKED, "Amazon presented a bot-detection page")
     if any(
         driver.find_elements(By.CSS_SELECTOR, selector) for selector in selectors.NOT_FOUND_MARKERS
@@ -166,7 +170,7 @@ def _check_page_state(driver: WebDriver) -> None:
 
 def _is_allowed_url(url: str, domain: str) -> bool:
     host = urlparse(url).hostname or ""
-    return host == f"www.amazon.{domain}" or host.endswith(f".amazon.{domain}")
+    return host == f"amazon.{domain}" or host.endswith(f".amazon.{domain}")
 
 
 def _set_location(
@@ -174,6 +178,9 @@ def _set_location(
 ) -> tuple[LocationStatus, str | None]:
     if not context.requested_location:
         return LocationStatus.DEFAULT, _text(driver, selectors.LOCATION_DISPLAY, 1)
+    observed = _text(driver, selectors.LOCATION_DISPLAY, 1)
+    if observed and context.geo_key.replace(" ", "") in observed.upper().replace(" ", ""):
+        return LocationStatus.VERIFIED, observed
     if not _click(driver, selectors.LOCATION_TRIGGER, settings.element_timeout_seconds):
         return LocationStatus.UNSUPPORTED, None
     if not _fill(
@@ -209,11 +216,111 @@ def _set_location(
 
 
 class AmazonSeleniumScraper:
-    """One scraper instance creates a fresh browser session for every public operation."""
+    """Reuse a browser throughout a job, retaining the marketplace profile across jobs."""
 
-    def __init__(self, settings: Settings, sleep: Callable[[float], None] = time.sleep) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
+        challenge_notice: Callable[[bool], bool] | None = None,
+    ) -> None:
         self.settings = settings
         self.sleep = sleep
+        self.clock = clock
+        self.challenge_notice = challenge_notice
+        self._driver: WebDriver | None = None
+        self._domain: str | None = None
+        self._location: tuple[str, LocationStatus, str | None] | None = None
+        self._last_navigation: float | None = None
+        self._challenge_budget = float(settings.challenge_wait_seconds)
+        self.navigation_heartbeat: Callable[[], bool] | None = None
+
+    @contextmanager
+    def session(self, domain: str) -> Iterator[WebDriver]:
+        if self._driver is not None:
+            if domain != self._domain:
+                raise ValueError("Cannot change marketplace inside a browser session")
+            yield self._driver
+            return
+        with chrome_session(self.settings, domain) as driver:
+            self._driver, self._domain = driver, domain
+            self._location = None
+            self._challenge_budget = float(self.settings.challenge_wait_seconds)
+            try:
+                yield driver
+            finally:
+                self._driver, self._domain, self._location = None, None, None
+
+    def _check_with_recovery(self, driver: WebDriver, domain: str) -> bool:
+        try:
+            _check_page_state(driver)
+            return False
+        except ScrapingError as exc:
+            if exc.code != ScrapeErrorCode.BLOCKED:
+                raise
+        if self.settings.browser_headless or self._challenge_budget <= 0:
+            raise ScrapingError(
+                ScrapeErrorCode.BLOCKED,
+                "Amazon requires a human browser check. Use the visible browser recovery setup; "
+                "saved evidence is preserved.",
+            )
+        started = self.clock()
+        try:
+            while self.clock() - started < self._challenge_budget:
+                if self.challenge_notice and not self.challenge_notice(True):
+                    raise ScrapingError(ScrapeErrorCode.CANCELLED, "Job lease was lost")
+                self.sleep(2)
+                try:
+                    _check_page_state(driver)
+                    if _is_allowed_url(driver.current_url, domain):
+                        return True
+                except (StaleElementReferenceException, ScrapingError) as exc:
+                    if isinstance(exc, ScrapingError) and exc.code != ScrapeErrorCode.BLOCKED:
+                        raise
+            raise ScrapingError(
+                ScrapeErrorCode.BLOCKED,
+                "The human browser check was not completed in time. Scraping is paused briefly; "
+                "retry the job after the cooldown and complete the check in the visible browser.",
+            )
+        finally:
+            self._challenge_budget = max(0.0, self._challenge_budget - (self.clock() - started))
+            if self.challenge_notice:
+                self.challenge_notice(False)
+
+    def _navigate(self, driver: WebDriver, url: str, domain: str) -> None:
+        if self.navigation_heartbeat and not self.navigation_heartbeat():
+            raise ScrapingError(ScrapeErrorCode.CANCELLED, "Job lease was lost")
+        if self._last_navigation is not None:
+            delay = self.settings.min_navigation_interval_seconds - (
+                self.clock() - self._last_navigation
+            )
+            if delay > 0:
+                self.sleep(delay)
+        driver.get(url)
+        self._last_navigation = self.clock()
+        resolved_challenge = self._check_with_recovery(driver, domain)
+        if not _is_allowed_url(driver.current_url, domain):
+            raise ScrapingError(
+                ScrapeErrorCode.BLOCKED, "Amazon redirected outside the marketplace"
+            )
+        if resolved_challenge and urlparse(driver.current_url).path != urlparse(url).path:
+            # A manual challenge may return to the homepage. Revisit the intended page once.
+            self.sleep(self.settings.min_navigation_interval_seconds)
+            driver.get(url)
+            self._last_navigation = self.clock()
+            self._check_with_recovery(driver, domain)
+
+    def _prepare_location(
+        self, driver: WebDriver, context: CollectionContext
+    ) -> tuple[LocationStatus, str | None]:
+        if self._location and self._location[0] == context.geo_key:
+            return self._location[1], self._location[2]
+        self._navigate(driver, marketplace_url(context.key.domain), context.key.domain)
+        status, observed = _set_location(driver, context, self.settings)
+        self._check_with_recovery(driver, context.key.domain)
+        self._location = context.geo_key, status, observed
+        return status, observed
 
     def scrape_product(self, context: CollectionContext) -> ScrapeOutcome:
         for attempt in range(2):
@@ -229,15 +336,31 @@ class AmazonSeleniumScraper:
 
     def _scrape_product_once(self, context: CollectionContext) -> ScrapeOutcome:
         try:
-            with chrome_session(self.settings, context.key.domain) as driver:
-                driver.get(marketplace_url(context.key.domain))
-                location_status, observed_location = _set_location(driver, context, self.settings)
-                driver.get(product_url(context.key.domain, context.key.asin))
-                self.sleep(self.settings.min_navigation_interval_seconds)
-                _check_page_state(driver)
+            with self.session(context.key.domain) as driver:
+                location_status, observed_location = self._prepare_location(driver, context)
+                self._navigate(
+                    driver, product_url(context.key.domain, context.key.asin), context.key.domain
+                )
                 title = _text(driver, selectors.TITLE, self.settings.element_timeout_seconds)
+                # A challenge can replace the DOM after an eager navigation returns.
+                if not title and self._check_with_recovery(driver, context.key.domain):
+                    self._navigate(
+                        driver,
+                        product_url(context.key.domain, context.key.asin),
+                        context.key.domain,
+                    )
+                    title = _text(driver, selectors.TITLE, self.settings.element_timeout_seconds)
                 if not title:
                     raise ScrapingError(ScrapeErrorCode.PARSE_ERROR, "Product title was not found")
+                if context.requested_location:
+                    observed_location = _text(driver, selectors.LOCATION_DISPLAY, 1)
+                    location_status = (
+                        LocationStatus.VERIFIED
+                        if observed_location
+                        and context.geo_key.replace(" ", "")
+                        in observed_location.upper().replace(" ", "")
+                        else LocationStatus.UNVERIFIED
+                    )
                 resolved_asin = product_asin_from_url(driver.current_url)
                 if resolved_asin and resolved_asin != context.key.asin:
                     raise ScrapingError(
@@ -301,9 +424,8 @@ class AmazonSeleniumScraper:
         failures: list[ItemFailure] = []
         seen: set[str] = set()
         try:
-            with chrome_session(self.settings, context.key.domain) as driver:
-                driver.get(marketplace_url(context.key.domain))
-                status, _ = _set_location(driver, context, self.settings)
+            with self.session(context.key.domain) as driver:
+                status, _ = self._prepare_location(driver, context)
                 if context.requested_location and status != LocationStatus.VERIFIED:
                     return [], [
                         ItemFailure(
@@ -313,11 +435,11 @@ class AmazonSeleniumScraper:
                         )
                     ]
                 for page in range(1, pages + 1):
-                    driver.get(
-                        f"{marketplace_url(context.key.domain)}/s?k={quote_plus(query)}&page={page}"
+                    self._navigate(
+                        driver,
+                        f"{marketplace_url(context.key.domain)}/s?k={quote_plus(query)}&page={page}",
+                        context.key.domain,
                     )
-                    self.sleep(self.settings.min_navigation_interval_seconds)
-                    _check_page_state(driver)
                     cards = driver.find_elements(By.CSS_SELECTOR, selectors.SEARCH_CARD)
                     if not cards:
                         break

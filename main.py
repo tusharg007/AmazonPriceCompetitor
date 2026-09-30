@@ -192,9 +192,25 @@ def render_last_job(repo: SQLiteRepository) -> None:
     status = f"Job {job.id}: {job.status.value} ({job.progress}%)"
     if job.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
         st.progress(job.progress, text=status)
+        if job.error_code == "challenge_waiting":
+            st.warning(job.error_message)
+            recovery_url = get_settings().browser_recovery_url
+            if recovery_url:
+                st.link_button("Open scraping browser to complete the check", recovery_url)
+            else:
+                st.info("Complete the check in the visible Selenium browser window.")
+            st.caption(
+                f"The job waits up to {get_settings().challenge_wait_seconds} seconds in total for "
+                "human checks. In Docker, click Connect; the default browser password is secret."
+            )
         return
     if job.error_message:
         st.warning(f"{status} — {job.error_message}")
+        if job.error_code == "blocked":
+            st.info(
+                "Amazon required a human browser check. Wait for the short cooldown, "
+                "then retry. If prompted, open the scraping browser while the new job is running."
+            )
     elif job.status == JobStatus.SUCCEEDED:
         st.success(status)
     else:

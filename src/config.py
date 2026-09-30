@@ -66,6 +66,11 @@ class Settings:
     groq_model: str
     artifact_dir: Path
     strict_sqlite_version: bool
+    browser_profile_dir: Path | None = None
+    selenium_url: str | None = None
+    browser_recovery_url: str | None = None
+    challenge_wait_seconds: int = 300
+    block_cooldown_seconds: int = 300
 
 
 def get_settings() -> Settings:
@@ -95,4 +100,9 @@ def get_settings() -> Settings:
         groq_model=os.getenv("APP_GROQ_MODEL", "openai/gpt-oss-20b").strip(),
         artifact_dir=artifact_dir,
         strict_sqlite_version=_bool("APP_STRICT_SQLITE_VERSION", False),
+        browser_profile_dir=database_path.parent / "browser-profiles",
+        selenium_url=os.getenv("APP_SELENIUM_URL") or None,
+        browser_recovery_url=os.getenv("APP_BROWSER_RECOVERY_URL") or None,
+        challenge_wait_seconds=_positive_int("APP_CHALLENGE_WAIT_SECONDS", 300),
+        block_cooldown_seconds=_positive_int("APP_BLOCK_COOLDOWN_SECONDS", 300),
     )

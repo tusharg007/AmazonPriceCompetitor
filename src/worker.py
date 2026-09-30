@@ -6,12 +6,13 @@ import logging
 import os
 import socket
 import time
+from contextlib import ExitStack
 
 from src.config import get_settings
 from src.db import DatabaseError, SQLiteRepository
 from src.llm import run_analysis
 from src.logging_config import configure_logging
-from src.models import Job, JobKind, JobStatus
+from src.models import Job, JobKind, JobStatus, ScrapeErrorCode
 from src.services import discover_competitors, make_scraper, scrape_context
 
 LOGGER = logging.getLogger(__name__)
@@ -22,9 +23,31 @@ def run_job(repo: SQLiteRepository, job: Job) -> None:
         raise DatabaseError("Claimed job is missing a lease token")
     settings = get_settings()
     scraper = make_scraper(settings)
+    stack = ExitStack()
+
+    def challenge_notice(waiting: bool) -> bool:
+        current = repo.get_job(job.id)
+        if not current or not repo.heartbeat(job.id, job.lease_token or "", current.progress):
+            return False
+        return repo.set_challenge_notice(job.id, job.lease_token or "", waiting)
+
+    scraper.challenge_notice = challenge_notice
+    scraper.navigation_heartbeat = lambda: repo.heartbeat(
+        job.id,
+        job.lease_token or "",
+        (repo.get_job(job.id) or job).progress,
+    )
     try:
+        if job.kind != JobKind.ANALYZE:
+            repo.ensure_scraping_available(job.context_id)
+            context = repo.get_context(job.context_id)
+            if not context:
+                raise DatabaseError("Product context no longer exists")
+            stack.enter_context(scraper.session(context.key.domain))
         if job.kind == JobKind.SCRAPE_PRODUCT:
             snapshot_id, failure = scrape_context(repo, scraper, job.context_id, capture_key=job.id)
+            if failure and failure.code == ScrapeErrorCode.BLOCKED:
+                repo.set_scraping_cooldown(job.context_id)
             status = (
                 JobStatus.SUCCEEDED
                 if not failure
@@ -48,6 +71,8 @@ def run_job(repo: SQLiteRepository, job: Job) -> None:
                 lambda progress: repo.heartbeat(job.id, job.lease_token or "", progress),
                 settings,
             )
+            if any(failure.code == ScrapeErrorCode.BLOCKED for failure in result.failures):
+                repo.set_scraping_cooldown(job.context_id)
             repo.finish_job(
                 job.id,
                 job.lease_token,
@@ -81,6 +106,11 @@ def run_job(repo: SQLiteRepository, job: Job) -> None:
             error_code="worker_error",
             error_message=str(exc),
         )
+    finally:
+        try:
+            stack.close()
+        except Exception:
+            LOGGER.exception("Browser cleanup failed for job %s", job.id)
 
 
 def run_once(repo: SQLiteRepository, worker_id: str) -> bool:
