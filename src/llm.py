@@ -17,14 +17,31 @@ from src.relevance import select_comparable_competitors
 
 class LLMCompetitorInsight(BaseModel):
     asin: str
-    key_points: list[str] = Field(default_factory=list, max_length=5)
+    key_points: list[str] = Field(default_factory=list)
 
 
 class LLMAnalysis(BaseModel):
-    summary: str = Field(max_length=1600)
-    positioning: str = Field(max_length=1600)
-    top_competitors: list[LLMCompetitorInsight] = Field(default_factory=list, max_length=10)
-    recommendations: list[str] = Field(default_factory=list, max_length=8)
+    summary: str
+    positioning: str
+    top_competitors: list[LLMCompetitorInsight] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
+def _bounded_analysis(parsed: LLMAnalysis, allowed_asins: set[str]) -> dict[str, Any]:
+    invalid = [entry.asin for entry in parsed.top_competitors if entry.asin not in allowed_asins]
+    if invalid:
+        raise DatabaseError(
+            f"Analysis contained unsupported competitor ASINs: {', '.join(invalid)}"
+        )
+    return {
+        "summary": parsed.summary[:1600],
+        "positioning": parsed.positioning[:1600],
+        "top_competitors": [
+            {"asin": entry.asin, "key_points": [point[:300] for point in entry.key_points[:5]]}
+            for entry in parsed.top_competitors[:10]
+        ],
+        "recommendations": [item[:300] for item in parsed.recommendations[:8]],
+    }
 
 
 def _json_value(value: Any) -> Any:
@@ -141,12 +158,7 @@ def run_analysis(
     if not isinstance(parsed, LLMAnalysis):
         raise DatabaseError("Groq returned an invalid structured analysis")
     allowed_asins = {row["asin"] for row in evidence["competitors"]}
-    invalid = [entry.asin for entry in parsed.top_competitors if entry.asin not in allowed_asins]
-    if invalid:
-        raise DatabaseError(
-            f"Analysis contained unsupported competitor ASINs: {', '.join(invalid)}"
-        )
-    output = parsed.model_dump(mode="json")
+    output = _bounded_analysis(parsed, allowed_asins)
     repo.save_analysis(parent_snapshot_id, run_id, input_hash, settings.groq_model, output)
     return output
 
