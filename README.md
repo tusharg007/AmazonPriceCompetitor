@@ -9,6 +9,7 @@ A Streamlit application that gathers Amazon product and competitor evidence thro
 - SQLite replaces append-only JSON storage with product/location contexts, snapshots, durable jobs, competitor runs, analyses, migrations, and backups.
 - Browser work runs in a separate worker so Streamlit reruns do not create duplicate scraping or LLM requests.
 - Analysis uses Groq-hosted open-weight models, is tied to the exact saved snapshots it used, and rejects competitor ASINs that are not in those records.
+- Saved search observations remain visible, while Groq receives a conservative comparison cohort: matching currency and verified delivery location, a price within 0.5–2 times the tracked product when its price is known, and no obvious compatibility or different-market-version listing. This is a relevance screen, not an authenticity check.
 
 ## Quick start
 

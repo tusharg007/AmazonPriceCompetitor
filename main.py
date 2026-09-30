@@ -9,8 +9,9 @@ import streamlit as st
 from src.config import SUPPORTED_DOMAINS, get_settings
 from src.db import DatabaseError, SQLiteRepository
 from src.jobs import enqueue_analysis, enqueue_competitors, enqueue_scrape
-from src.llm import analysis_markdown
+from src.llm import analysis_markdown, build_analysis_input
 from src.models import JobStatus, ValidationError
+from src.relevance import select_comparable_competitors
 from src.services import create_tracked_context
 
 PAGE_SIZE = 10
@@ -96,6 +97,11 @@ def render_selected_context(repo: SQLiteRepository) -> None:
     snapshot = repo.get_latest_snapshot(context.id)
     run = repo.get_analysis_run(context.id)
     run_id = int(run["id"]) if run else None
+    rows = repo.get_competitor_rows(run_id) if run_id else []
+    parent_snapshot = repo.get_snapshot(int(run["parent_snapshot_id"])) if run else None
+    comparable, excluded = (
+        select_comparable_competitors(parent_snapshot, rows) if parent_snapshot else ([], {})
+    )
     st.divider()
     st.subheader(f"Competitor analysis: {context.key.asin} on amazon.{context.key.domain}")
     render_snapshot(snapshot)
@@ -117,7 +123,7 @@ def render_selected_context(repo: SQLiteRepository) -> None:
             "Analyze with LLM",
             type="primary",
             key=f"analyze-{context.id}",
-            disabled=run_id is None,
+            disabled=not comparable,
         ):
             try:
                 job = enqueue_analysis(repo, context.id)
@@ -126,7 +132,6 @@ def render_selected_context(repo: SQLiteRepository) -> None:
             except DatabaseError as exc:
                 st.error(str(exc))
     if run_id:
-        rows = repo.get_competitor_rows(run_id)
         assert run is not None
         if snapshot and run["parent_snapshot_id"] != snapshot["id"]:
             st.caption(
@@ -141,6 +146,13 @@ def render_selected_context(repo: SQLiteRepository) -> None:
             st.warning(
                 "Some competitors could not be collected. Analysis will use only saved evidence."
             )
+        st.caption(
+            f"{len(comparable)} listings meet the conservative comparison criteria. "
+            f"{sum(excluded.values())} saved listings are excluded from Groq analysis."
+        )
+        if not comparable:
+            st.info("No comparable listings are available for analysis in this run.")
+        st.markdown("#### Saved search observations")
         for row in rows:
             sponsored = " · sponsored" if row["sponsored"] else ""
             st.write(
@@ -149,7 +161,8 @@ def render_selected_context(repo: SQLiteRepository) -> None:
     else:
         st.caption("No competitor evidence yet. Refresh competitors to enable analysis.")
     analysis = repo.latest_analysis(context.id)
-    if analysis and analysis.get("output"):
+    current_input_hash = build_analysis_input(repo, context.id)[3] if comparable else None
+    if analysis and analysis.get("output") and analysis["input_hash"] == current_input_hash:
         st.divider()
         st.caption(f"Groq analysis completed: {analysis['completed_at']}")
         st.markdown(
@@ -157,6 +170,8 @@ def render_selected_context(repo: SQLiteRepository) -> None:
             if run_id
             else ""
         )
+    elif analysis:
+        st.info("A saved analysis used older evidence. Select Analyze with LLM to update it.")
 
 
 JOB_POLL_SECONDS = get_settings().job_poll_seconds

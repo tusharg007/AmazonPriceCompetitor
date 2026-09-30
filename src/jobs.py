@@ -19,4 +19,7 @@ def enqueue_competitors(repo: SQLiteRepository, context_id: int) -> Job:
 def enqueue_analysis(repo: SQLiteRepository, context_id: int) -> Job:
     if repo.get_analysis_run(context_id) is None:
         raise DatabaseError("Collect at least one competitor before running analysis")
+    from src.llm import build_analysis_input
+
+    build_analysis_input(repo, context_id)
     return repo.enqueue_job(JobKind.ANALYZE, context_id, "analyze-current-run")
