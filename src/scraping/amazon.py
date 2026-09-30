@@ -60,7 +60,13 @@ def _first(driver: WebDriver, selector_group: tuple[str, ...], timeout: int) -> 
 
 def _text(driver: WebDriver, selector_group: tuple[str, ...], timeout: int = 1) -> str | None:
     element = _first(driver, selector_group, timeout)
-    return clean_text(element.text) if element else None
+    if not element:
+        return None
+    return (
+        clean_text(element.text)
+        or clean_text(element.get_attribute("textContent"))
+        or clean_text(element.get_attribute("aria-label"))
+    )
 
 
 def _all_text(driver: WebDriver, selector_group: tuple[str, ...]) -> tuple[str, ...]:
@@ -112,10 +118,23 @@ def _set_location(
     if not apply:
         return LocationStatus.UNVERIFIED, None
     apply.click()
-    observed = _text(driver, selectors.LOCATION_DISPLAY, settings.element_timeout_seconds)
     expected = context.geo_key.replace(" ", "")
-    actual = (observed or "").upper().replace(" ", "")
-    return (LocationStatus.VERIFIED if expected in actual else LocationStatus.UNVERIFIED), observed
+
+    def location_was_applied(current: WebDriver) -> bool:
+        for selector in selectors.LOCATION_DISPLAY:
+            for element in current.find_elements(By.CSS_SELECTOR, selector):
+                actual = (clean_text(element.text) or "").upper().replace(" ", "")
+                if expected in actual:
+                    return True
+        return False
+
+    try:
+        WebDriverWait(driver, settings.element_timeout_seconds).until(location_was_applied)
+    except TimeoutException:
+        observed = _text(driver, selectors.LOCATION_DISPLAY, 1)
+        return LocationStatus.UNVERIFIED, observed
+    observed = _text(driver, selectors.LOCATION_DISPLAY, 1)
+    return LocationStatus.VERIFIED, observed
 
 
 class AmazonSeleniumScraper:
@@ -178,7 +197,7 @@ class AmazonSeleniumScraper:
                     return ScrapeOutcome(
                         snapshot=snapshot,
                         code=ScrapeErrorCode.LOCATION_UNVERIFIED,
-                        message="Price was captured but delivery location could not be verified",
+                        message="Delivery location could not be verified for this marketplace",
                     )
                 return ScrapeOutcome(snapshot=snapshot)
         except ScrapingError as exc:

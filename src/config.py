@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SUPPORTED_DOMAINS = ("com", "ca", "co.uk", "de", "fr", "it", "ae")
+SUPPORTED_DOMAINS = ("com", "in", "ca", "co.uk", "de", "fr", "it", "ae")
 
 
 class ConfigurationError(ValueError):

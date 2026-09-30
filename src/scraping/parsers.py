@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 
 CURRENCY_BY_DOMAIN = {
     "com": "USD",
+    "in": "INR",
     "ca": "CAD",
     "co.uk": "GBP",
     "de": "EUR",
@@ -14,7 +15,15 @@ CURRENCY_BY_DOMAIN = {
     "it": "EUR",
     "ae": "AED",
 }
-SYMBOL_TO_CURRENCY = {"£": "GBP", "€": "EUR", "AED": "AED", "د.إ": "AED", "C$": "CAD", "CA$": "CAD"}
+SYMBOL_TO_CURRENCY = {
+    "£": "GBP",
+    "€": "EUR",
+    "₹": "INR",
+    "AED": "AED",
+    "د.إ": "AED",
+    "C$": "CAD",
+    "CA$": "CAD",
+}
 
 
 def clean_text(value: str | None) -> str | None:

@@ -12,9 +12,14 @@ BLOCK_MARKERS = (
 NOT_FOUND_MARKERS = ("#g", "#cs_404", "#error-page")
 TITLE = ("#productTitle", "#title span")
 PRICE = (
+    "#corePriceDisplay_desktop_feature_div .a-priceToPay .a-offscreen",
     "#corePrice_feature_div .a-price .a-offscreen",
+    "#apex_desktop .a-price .a-offscreen",
+    ".reinventPricePriceToPayMargin .a-offscreen",
     "#priceblock_ourprice",
     "#priceblock_dealprice",
+    "#corePriceDisplay_desktop_feature_div .a-priceToPay",
+    "#corePrice_feature_div .a-price",
 )
 BRAND = ("#bylineInfo", "#productOverview_feature_div tr th")
 RATING = ("#acrPopover", "i[data-hook='average-star-rating'] span")

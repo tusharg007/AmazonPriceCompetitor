@@ -78,6 +78,19 @@ def normalize_geo(location: str | None) -> tuple[str, str | None]:
     return re.sub(r"\s+", " ", requested).upper(), requested
 
 
+def validate_delivery_location(domain: str, location: str | None) -> None:
+    """Reject clear marketplace/location mismatches before browser work is queued."""
+    requested = (location or "").strip()
+    if not requested:
+        return
+    if domain == "in" and not re.fullmatch(r"\d{6}", requested):
+        raise ValidationError("Amazon.in requires a six-digit Indian PIN code")
+    if domain == "com" and re.fullmatch(r"\d{6}", requested):
+        raise ValidationError(
+            "A six-digit Indian PIN code requires the 'in' domain, not amazon.com"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ProductKey:
     asin: str

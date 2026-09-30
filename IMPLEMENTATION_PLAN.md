@@ -293,7 +293,7 @@ Gate: dry-run writes nothing; applying leaves source bytes unchanged; a repeated
 
 Files: `src/scraping/*`, product fixtures, browser integration tests.
 
-- Implement browser lifecycle/error classification first, then `.com` product/location extraction, then the other six locale adapters.
+- Implement browser lifecycle/error classification first, then `.com` product/location extraction, then the other seven locale adapters.
 - Test against deterministic local HTML served on localhost through real Selenium, plus pure parser tests. Production URL restrictions remain enabled; fixture access uses an explicit test-only configuration.
 - Cover optional price, missing required title, blocked page, consent, geo verification, variant redirect, selector fallback, delayed rendering, localized money, and browser cleanup.
 

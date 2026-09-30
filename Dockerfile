@@ -21,7 +21,7 @@ COPY scripts ./scripts
 COPY migrations ./migrations
 COPY main.py ./
 RUN uv sync --locked --no-dev
-RUN mkdir -p /app/data /app/artifacts && chown -R app:app /app
+RUN mkdir -p /app/data /app/artifacts && chown -R app:app /app/data /app/artifacts
 
 USER app
 EXPOSE 8501

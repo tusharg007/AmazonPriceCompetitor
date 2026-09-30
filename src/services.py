@@ -14,6 +14,7 @@ from src.models import (
     JobStatus,
     ProductKey,
     ScrapeErrorCode,
+    validate_delivery_location,
 )
 from src.scraping.amazon import AmazonSeleniumScraper
 from src.scraping.parsers import normalized_query
@@ -22,7 +23,9 @@ from src.scraping.parsers import normalized_query
 def create_tracked_context(
     repo: SQLiteRepository, asin: str, domain: str, location: str | None
 ) -> CollectionContext:
-    return repo.get_or_create_context(ProductKey(asin, domain), location, tracked=True)
+    key = ProductKey(asin, domain)
+    validate_delivery_location(key.domain, location)
+    return repo.get_or_create_context(key, location, tracked=True)
 
 
 def scrape_context(

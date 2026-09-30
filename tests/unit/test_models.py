@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from src.config import get_settings
-from src.models import ProductKey, ValidationError, normalize_geo
+from src.models import ProductKey, ValidationError, normalize_geo, validate_delivery_location
 from src.scraping.parsers import parse_decimal_price, parse_rating
 
 
@@ -28,6 +28,7 @@ def test_geo_preserves_leading_zeroes() -> None:
         ("1.299,99 €", "de", Decimal("1299.99"), "EUR"),
         ("AED 1,299.99", "ae", Decimal("1299.99"), "AED"),
         ("C$ 24.95", "ca", Decimal("24.95"), "CAD"),
+        ("₹1,299", "in", Decimal(1299), "INR"),
     ],
 )
 def test_price_parsing_is_locale_aware(
@@ -43,3 +44,11 @@ def test_rating_parser_handles_comma_separator() -> None:
 def test_groq_model_is_configured_through_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_GROQ_MODEL", "llama-3.1-8b-instant")
     assert get_settings().groq_model == "llama-3.1-8b-instant"
+
+
+def test_indian_pin_requires_indian_marketplace() -> None:
+    with pytest.raises(ValidationError, match="requires the 'in' domain"):
+        validate_delivery_location("com", "273015")
+    validate_delivery_location("in", "273015")
+    with pytest.raises(ValidationError, match="six-digit"):
+        validate_delivery_location("in", "90210")
