@@ -1,67 +1,96 @@
-# Amazon Competitor Analysis
+# Amazon Price & Competitor Analysis
 
-A Streamlit application that gathers Amazon product and competitor evidence through Selenium, stores immutable observations in SQLite, and produces grounded Groq analysis from saved snapshots.
+An application for collecting Amazon product and competitor evidence, tracking it over time, and generating a grounded market analysis. I built it with Streamlit, Selenium, SQLite, and Groq to make competitor research more repeatable and easier to audit.
 
-## What changed
+## The problem
 
-- Oxylabs and TinyDB are removed from the runtime stack.
-- Selenium WebDriver is the only product and search page acquisition path.
-- SQLite replaces append-only JSON storage with product/location contexts, snapshots, durable jobs, competitor runs, analyses, migrations, and backups.
-- Browser work runs in a separate worker so Streamlit reruns do not create duplicate scraping or LLM requests.
-- Analysis uses Groq-hosted open-weight models, is tied to the exact saved snapshots it used, and rejects competitor ASINs that are not in those records.
-- Saved search observations remain visible, while Groq receives a conservative comparison cohort: matching currency and verified delivery location, a price within 0.5–2 times the tracked product when its price is known, and no obvious compatibility or different-market-version listing. This is a relevance screen, not an authenticity check.
+Comparing a product with Amazon search results by hand means repeatedly opening listings, recording prices and availability, checking the delivery location, and deciding which results are actually comparable. The information can change between visits. A list of prices alone also loses the source, time, and conditions under which each price was observed.
 
-## Quick start
+## How the project solves it
 
-Install Python 3.13 and uv, copy `.env.example` to `.env`, then fill `GROQ_API_KEY` only if analysis is needed.
+1. Enter an Amazon ASIN, marketplace, and optional delivery location.
+2. A background worker opens the product with Selenium and records a dated snapshot, including its source URL, price, currency, availability, and location verification status.
+3. **Refresh competitors** searches the same marketplace, collects listing snapshots in one browser session, and publishes a run with its successes and failures. An incomplete refresh cannot replace an earlier complete run.
+4. A conservative relevance filter selects listings that can reasonably be compared with the tracked product. The full set of saved search observations remains visible.
+5. **Analyze with LLM** sends only the frozen, selected evidence to a Groq-hosted model. The saved report is linked to the exact product and competitor snapshots used to create it.
+
+This workflow separates observed marketplace facts from generated interpretation. It does not treat a listing title or a model response as proof of product quality or authenticity.
+
+## System architecture
+
+```mermaid
+flowchart LR
+    U[User] --> UI[Streamlit UI]
+    UI -->|enqueue and read| DB[(SQLite)]
+    W[Background worker] -->|claim jobs and save results| DB
+    W -->|Selenium WebDriver| B[Visible Chromium browser]
+    B -->|product and search pages| A[Amazon marketplace]
+    W -->|filtered snapshot evidence| G[Groq API]
+    G -->|structured analysis| W
+    U -.->|complete a browser check when needed| B
+```
+
+The UI validates input and displays persisted results. It does not run long browser or LLM calls during a Streamlit rerun. The worker owns one browser session per scraping job and writes observations to SQLite. Product snapshots are immutable; competitor runs and analyses reference the saved snapshots they used. A failed or partial refresh preserves the previous complete run.
+
+SQLite provides the job queue, product and location identities, snapshot history, competitor runs, and analysis records. It uses migrations, foreign keys, WAL, and short transactions. The browser profile persists between jobs so browser state is not discarded after every listing.
+
+## Tech stack
+
+| Component | Technology | Responsibility |
+| --- | --- | --- |
+| Interface | Python, Streamlit | Product input, job progress, saved evidence, and analysis display |
+| Scraping | Selenium WebDriver, Chromium | Navigate Amazon product and search pages, extract listing data, verify location, and detect access challenges |
+| Human browser view | Selenium standalone Chromium, noVNC | Let a user complete a genuine Amazon browser check while the worker waits |
+| Storage and job queue | SQLite | Durable jobs, snapshots, competitor runs, analyses, migrations, and cooldowns |
+| AI analysis | LangChain, Groq, Pydantic | Request structured analysis over saved evidence and validate the returned data |
+| Deployment | Docker Compose | Run the UI, worker, migration task, and browser with persistent volumes |
+| Quality checks | pytest, Ruff, mypy | Regression tests, lint and formatting, and static type checks |
+
+Key implementation modules are [`main.py`](main.py) for the UI, [`src/worker.py`](src/worker.py) for job execution, [`src/scraping/amazon.py`](src/scraping/amazon.py) for Selenium workflows, [`src/db.py`](src/db.py) for persistence, [`src/relevance.py`](src/relevance.py) for comparison selection, and [`src/llm.py`](src/llm.py) for grounded analysis.
+
+## Reliability and evidence rules
+
+- A job remains identifiable across Streamlit reruns. The worker records progress and terminal status in SQLite.
+- Each observation keeps its capture time, marketplace, source URL, price text, currency, and delivery-location status. Later refreshes add snapshots rather than rewriting old observations.
+- Analysis compares prices only when currencies match, and requires a verified delivery location when one was requested. It filters out some compatibility listings and different-market versions; this is a relevance filter, not an authenticity judgment.
+- Groq receives the selected snapshot evidence, not browser access or database credentials. Generated competitor ASINs must belong to the saved comparison set.
+- Browser navigation is paced. When Amazon presents a challenge, the job offers a visible browser for manual completion, waits for a bounded time, and applies a marketplace cooldown if the challenge remains unresolved. No automatic CAPTCHA solver is used.
+
+## Run locally with Docker
+
+Install Docker Desktop (or Docker Engine with Compose), then from the repository root:
+
+```powershell
+Copy-Item .env.example .env
+# Edit .env: set GROQ_API_KEY for AI analysis and choose an APP_BROWSER_VNC_PASSWORD.
+docker compose up -d --build
+docker compose exec -T app uv run --no-sync python -m scripts.db_admin health
+```
+
+Open the [Streamlit app](http://localhost:8501). If a running job asks for a human browser check, open the [browser view](http://localhost:7900), click **Connect**, and use the password set in `.env`. The job resumes when the check is complete. `GROQ_API_KEY` is required only for **Analyze with LLM**.
+
+The `app-data` volume holds SQLite and the `browser-profiles` volume holds browser state. Keep both volumes when updating the stack. Back up SQLite with the [database admin command](docs/operations.md) before migrations or host changes. These services are designed for one host and one worker.
+
+## Run the checks
+
+With Python 3.13 and `uv` installed:
 
 ```powershell
 uv sync --locked --group dev
-uv run python -m scripts.db_admin migrate
-uv run python -m src.worker
-```
-
-In a second terminal:
-
-```powershell
-uv run streamlit run main.py
-```
-
-Submit an ASIN, marketplace, and optional delivery location. The UI creates a durable job. The worker processes it, and the UI displays saved status/results on later reruns. Start competitor and analysis jobs only from their explicit buttons.
-
-## Quality checks
-
-```powershell
+uv run pytest -q --basetemp .test-tmp
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src main.py
-uv run pytest -q --basetemp .test-tmp
-uv run pip-audit
 ```
 
-Automated tests never contact Amazon or Groq. Live Selenium checks are intentionally separate because Amazon access, location controls, and selectors vary by marketplace.
+Automated tests use simulated pages and model responses. Live Amazon access varies by marketplace, location, and time; the [validation record](docs/validation.md) distinguishes live checks from automated checks.
 
-## Legacy TinyDB import
+## Deployment and limitations
 
-The importer uses only the standard library and leaves the source JSON untouched.
+The complete application needs the Streamlit process, a continuously running worker, a Selenium browser service, and persistent local volumes. Deploy it on a Docker-capable host and expose the Streamlit UI through an authenticated HTTPS gateway or a private SSH tunnel. See the [operations runbook](docs/operations.md) for backup and recovery details.
 
-```powershell
-uv run python -m scripts.migrate_tinydb --source data.json --dry-run
-uv run python -m scripts.migrate_tinydb --source data.json --apply
-```
+Streamlit Community Cloud runs a Streamlit entrypoint, but it does not provide the persistent Docker services and durable local storage this architecture requires. Publishing only `main.py` there would leave scraping jobs unprocessed and could lose the SQLite history. A Community Cloud version would need a separate hosted worker/browser backend and durable shared storage.
 
-Review the dry-run report first. The importer records file-hash and record IDs so importing the same source again does not create duplicate observations.
+Amazon can still require a human CAPTCHA or deny access. Prices can be missing or location-dependent, and a saved snapshot is a point-in-time observation rather than a live price feed. Groq is a hosted API for open-weight models; its availability and free-tier limits depend on the provider. The application does not convert currencies or make claims about product authenticity.
 
-## Deployment boundary
-
-This release is designed for one host, one worker, one active browser job, and a persistent local SQLite volume. The database must be on a local filesystem. Run `uv run python -m scripts.db_admin health` before deployment and use SQLite 3.51.3 or a documented backport of its WAL-reset fix with `APP_STRICT_SQLITE_VERSION=true` in production.
-
-`docker compose build` and `docker compose up -d` start the migration, UI, worker, and a visible Selenium browser. Streamlit is at `http://localhost:8501`; the browser view is at `http://localhost:7900`. Both ports bind to localhost. Set `APP_BROWSER_VNC_PASSWORD` in `.env` before starting the stack (the example default is `secret`). The browser profile persists in the `browser-profiles` volume, and a competitor refresh uses one browser session instead of starting a browser for every listing.
-
-If Amazon shows a CAPTCHA or sign-in check, the job displays a link to that live browser. Open it, click **Connect**, complete the check yourself, and the job resumes automatically. The job waits for up to five minutes across its human checks, then pauses scraping for a five-minute marketplace cooldown. A partial refresh keeps the previous complete run. Do not expose port 7900 publicly; add an authenticated TLS gateway if remote access is required.
-
-## Limits
-
-Selenium does not guarantee Amazon access. CAPTCHA, sign-in, blocked pages, unsupported delivery controls, price/variant differences, and selector changes are recorded as failures or partial results. A genuine CAPTCHA needs a human in the visible browser. The app does not use stealth automation, proxy rotation, CAPTCHA solving, or direct HTTP scrape fallbacks. Prices are not currency-converted, and the LLM’s recommendations are generated interpretation rather than verified marketplace facts. Groq provides hosted inference and its free tier is rate-limited; the hosted API is not itself open source.
-
-See [architecture](docs/architecture.md), [operations](docs/operations.md), and [validation](docs/validation.md) for the data model, runbook, and verification evidence.
+For schema and operational details, see [architecture](docs/architecture.md), [operations](docs/operations.md), and [validation](docs/validation.md).
