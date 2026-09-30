@@ -2,14 +2,32 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from src.config import Settings
-from src.db import SQLiteRepository
+from src.db import DatabaseError, SQLiteRepository
+from src.jobs import enqueue_analysis, enqueue_competitors
 from src.models import JobKind, JobStatus, LocationStatus, ProductKey, ProductSnapshot
 
 
 def settings_for(path: Path) -> Settings:
     return Settings(
-        path, True, None, 30, 10, 900, 0, 20, 2, 3, 20, "fake", path.parent / "artifacts", False
+        database_path=path,
+        browser_headless=True,
+        browser_binary=None,
+        browser_no_sandbox=False,
+        browser_disable_dev_shm_usage=False,
+        page_timeout_seconds=30,
+        element_timeout_seconds=10,
+        job_timeout_seconds=900,
+        min_navigation_interval_seconds=0,
+        max_queue_size=20,
+        max_search_pages=2,
+        max_search_queries=3,
+        max_competitors=20,
+        groq_model="fake",
+        artifact_dir=path.parent / "artifacts",
+        strict_sqlite_version=False,
     )
 
 
@@ -68,3 +86,18 @@ def test_rollback_does_not_persist_changes(tmp_path: Path) -> None:
         pass
     with repo.connection() as conn:
         assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0
+
+
+def test_downstream_jobs_require_completed_inputs(tmp_path: Path) -> None:
+    repo = SQLiteRepository(settings_for(tmp_path / "jobs.sqlite3"))
+    context = repo.get_or_create_context(ProductKey("B0CX23VSAS", "com"), "00123")
+
+    with pytest.raises(DatabaseError, match="Scrape the product"):
+        enqueue_competitors(repo, context.id)
+    with pytest.raises(DatabaseError, match="Scrape the product"):
+        enqueue_analysis(repo, context.id)
+
+    repo.save_snapshot(snapshot(context.id))
+    assert enqueue_competitors(repo, context.id).kind == JobKind.DISCOVER_COMPETITORS
+    with pytest.raises(DatabaseError, match="competitor refresh"):
+        enqueue_analysis(repo, context.id)

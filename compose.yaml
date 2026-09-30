@@ -30,6 +30,9 @@ services:
     env_file: .env
     environment:
       APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
+      APP_BROWSER_BINARY: /usr/bin/chromium
+      APP_BROWSER_NO_SANDBOX: "true"
+      APP_BROWSER_DISABLE_DEV_SHM_USAGE: "true"
     volumes:
       - app-data:/app/data
 

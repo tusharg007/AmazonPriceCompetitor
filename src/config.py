@@ -52,6 +52,8 @@ class Settings:
     database_path: Path
     browser_headless: bool
     browser_binary: str | None
+    browser_no_sandbox: bool
+    browser_disable_dev_shm_usage: bool
     page_timeout_seconds: int
     element_timeout_seconds: int
     job_timeout_seconds: int
@@ -78,6 +80,8 @@ def get_settings() -> Settings:
         database_path=database_path,
         browser_headless=_bool("APP_BROWSER_HEADLESS", True),
         browser_binary=os.getenv("APP_BROWSER_BINARY") or None,
+        browser_no_sandbox=_bool("APP_BROWSER_NO_SANDBOX", False),
+        browser_disable_dev_shm_usage=_bool("APP_BROWSER_DISABLE_DEV_SHM_USAGE", False),
         page_timeout_seconds=_positive_int("APP_PAGE_TIMEOUT_SECONDS", 30),
         element_timeout_seconds=_positive_int("APP_ELEMENT_TIMEOUT_SECONDS", 10),
         job_timeout_seconds=_positive_int("APP_JOB_TIMEOUT_SECONDS", 900),

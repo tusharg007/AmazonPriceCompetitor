@@ -5,8 +5,9 @@
 - `uv lock` resolved the new Selenium and direct Pydantic dependencies and removed TinyDB.
 - `uv sync --locked --group dev` completed with Python 3.13.14.
 - `ruff check .`, `ruff format --check .`, and `mypy src main.py` pass.
-- `pytest -q --basetemp .test-tmp` passes 15 tests covering ASIN/domain/location validation, locale money parsing, Groq model configuration, SQLite migration/rollback/identity/snapshot/job idempotency, and a Streamlit form smoke test.
+- `pytest -q --basetemp .test-tmp` passes 17 tests covering ASIN/domain/location validation, locale money parsing, Groq and container browser configuration, downstream job prerequisites, SQLite migration/rollback/identity/snapshot/job idempotency, and a Streamlit form smoke test.
 - `pip-audit` passes with no known vulnerabilities after locking `langchain-groq` 1.1.3, the Groq SDK 0.37.1, and their transitive dependencies.
+- A real Selenium session starts and exits successfully in the production worker image with its pinned Chromium and ChromeDriver 154 pair.
 
 ## Environment evidence
 

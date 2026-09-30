@@ -4,7 +4,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
     APP_DATABASE_PATH=/app/data/amazon_competitor.sqlite3 \
-    APP_BROWSER_BINARY=/usr/bin/chromium
+    APP_BROWSER_BINARY=/usr/bin/chromium \
+    APP_BROWSER_NO_SANDBOX=true \
+    APP_BROWSER_DISABLE_DEV_SHM_USAGE=true
 
 RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app
 RUN apt-get update && apt-get install -y --no-install-recommends chromium chromium-driver \

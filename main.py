@@ -93,12 +93,18 @@ def render_selected_context(repo: SQLiteRepository) -> None:
     if not context:
         st.session_state.pop("selected_context_id", None)
         return
+    snapshot = repo.get_latest_snapshot(context.id)
+    run_id = repo.get_active_run_id(context.id)
     st.divider()
     st.subheader(f"Competitor analysis: {context.key.asin} on amazon.{context.key.domain}")
-    render_snapshot(repo.get_latest_snapshot(context.id))
+    render_snapshot(snapshot)
     left, right = st.columns(2)
     with left:
-        if st.button("Refresh competitors", key=f"refresh-{context.id}"):
+        if st.button(
+            "Refresh competitors",
+            key=f"refresh-{context.id}",
+            disabled=snapshot is None,
+        ):
             try:
                 job = enqueue_competitors(repo, context.id)
                 st.session_state["last_job_id"] = job.id
@@ -106,14 +112,18 @@ def render_selected_context(repo: SQLiteRepository) -> None:
             except DatabaseError as exc:
                 st.error(str(exc))
     with right:
-        if st.button("Analyze with LLM", type="primary", key=f"analyze-{context.id}"):
+        if st.button(
+            "Analyze with LLM",
+            type="primary",
+            key=f"analyze-{context.id}",
+            disabled=run_id is None,
+        ):
             try:
                 job = enqueue_analysis(repo, context.id)
                 st.session_state["last_job_id"] = job.id
                 st.info(f"Analysis job queued: {job.id}")
             except DatabaseError as exc:
                 st.error(str(exc))
-    run_id = repo.get_active_run_id(context.id)
     if run_id:
         rows = repo.get_competitor_rows(run_id)
         st.caption(f"Current completed competitor run: {run_id} ({len(rows)} products)")
