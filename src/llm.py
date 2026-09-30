@@ -8,6 +8,7 @@ import os
 from decimal import Decimal
 from typing import Any
 
+from groq import BadRequestError
 from pydantic import BaseModel, Field
 
 from src.config import Settings, get_settings
@@ -25,6 +26,49 @@ class LLMAnalysis(BaseModel):
     positioning: str
     top_competitors: list[LLMCompetitorInsight] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
+
+
+def _normalize_analysis_payload(payload: Any) -> LLMAnalysis:
+    """Repair only the list/scalar drift seen in otherwise usable Groq JSON."""
+    if not isinstance(payload, dict):
+        raise TypeError("Analysis must be a JSON object")
+    normalized = dict(payload)
+    if isinstance(normalized.get("recommendations"), str):
+        normalized["recommendations"] = [normalized["recommendations"]]
+    competitors = normalized.get("top_competitors")
+    if isinstance(competitors, list):
+        normalized["top_competitors"] = [
+            {**entry, "key_points": [entry["key_points"]]}
+            if isinstance(entry, dict) and isinstance(entry.get("key_points"), str)
+            else entry
+            for entry in competitors
+        ]
+    parsed = LLMAnalysis.model_validate(normalized)
+    if not parsed.summary.strip() or not parsed.positioning.strip():
+        raise ValueError("Analysis summary and positioning must not be empty")
+    return parsed
+
+
+def _schema_failure(exc: BadRequestError) -> bool:
+    body = exc.body
+    error = body.get("error", body) if isinstance(body, dict) else None
+    return isinstance(error, dict) and error.get("code") == "json_validate_failed"
+
+
+def _failed_generation(exc: BadRequestError) -> LLMAnalysis | None:
+    if not _schema_failure(exc):
+        return None
+    body = exc.body
+    assert isinstance(body, dict)
+    error = body.get("error", body)
+    assert isinstance(error, dict)
+    generated = error.get("failed_generation")
+    if not isinstance(generated, str) or len(generated) > 100_000:
+        return None
+    try:
+        return _normalize_analysis_payload(json.loads(generated))
+    except (ValueError, TypeError):
+        return None
 
 
 def _bounded_analysis(parsed: LLMAnalysis, allowed_asins: set[str]) -> dict[str, Any]:
@@ -145,18 +189,40 @@ def run_analysis(
             "never perform currency conversion. If the competitor run is partial, explicitly state "
             "that its evidence is incomplete. State that this is a filtered comparison cohort, not "
             "the entire market. Recommendations are interpretations and must remain labeled as such.\n\n"
-            "Return a concise JSON analysis with summary, positioning, top_competitors "
-            "(asin and key_points), and recommendations.\n\nEVIDENCE (JSON):\n{evidence}"
+            "Return one JSON object with summary and positioning as strings, "
+            "top_competitors as an array of objects (each with asin as a string and "
+            "key_points as an array of strings), and recommendations as an array of "
+            "strings. Never return recommendations or key_points as a single string.\n\n"
+            "EVIDENCE (JSON):\n{evidence}"
         ),
         input_variables=["evidence"],
     )
     model = ChatGroq(model=settings.groq_model, temperature=0, timeout=30, max_retries=1)
+    inputs = {"evidence": json.dumps(evidence, ensure_ascii=False, default=_json_value)}
     chain = prompt | model.with_structured_output(LLMAnalysis, method="json_schema", strict=True)
-    parsed = chain.invoke(
-        {"evidence": json.dumps(evidence, ensure_ascii=False, default=_json_value)}
-    )
-    if not isinstance(parsed, LLMAnalysis):
-        raise DatabaseError("Groq returned an invalid structured analysis")
+    try:
+        strict_result = chain.invoke(inputs)
+        parsed = _normalize_analysis_payload(
+            strict_result.model_dump() if isinstance(strict_result, LLMAnalysis) else strict_result
+        )
+    except BadRequestError as exc:
+        if not _schema_failure(exc):
+            raise DatabaseError(
+                "Groq rejected the analysis request; check the model and API key"
+            ) from exc
+        recovered = _failed_generation(exc)
+        if recovered is None:
+            try:
+                fallback = prompt | model.with_structured_output(method="json_mode")
+                parsed = _normalize_analysis_payload(fallback.invoke(inputs))
+            except Exception as fallback_exc:
+                raise DatabaseError(
+                    "Groq could not produce a valid analysis. Please retry the analysis."
+                ) from fallback_exc
+        else:
+            parsed = recovered
+    except Exception as exc:
+        raise DatabaseError("Groq analysis failed. Please retry the analysis.") from exc
     allowed_asins = {row["asin"] for row in evidence["competitors"]}
     output = _bounded_analysis(parsed, allowed_asins)
     repo.save_analysis(parent_snapshot_id, run_id, input_hash, settings.groq_model, output)
