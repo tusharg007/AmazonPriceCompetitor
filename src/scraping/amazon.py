@@ -8,7 +8,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from urllib.parse import quote_plus, urlparse
 
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException,
+    WebDriverException,
+)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
@@ -44,24 +49,7 @@ def product_url(domain: str, asin: str) -> str:
     return f"{marketplace_url(domain)}/dp/{asin}"
 
 
-def _first(driver: WebDriver, selector_group: tuple[str, ...], timeout: int) -> WebElement | None:
-    wait = WebDriverWait(driver, timeout)
-    for selector in selector_group:
-        try:
-
-            def locate(current: WebDriver, css_selector: str = selector) -> WebElement:
-                return current.find_element(By.CSS_SELECTOR, css_selector)
-
-            return wait.until(locate)
-        except TimeoutException:
-            continue
-    return None
-
-
-def _text(driver: WebDriver, selector_group: tuple[str, ...], timeout: int = 1) -> str | None:
-    element = _first(driver, selector_group, timeout)
-    if not element:
-        return None
+def _element_text(element: WebElement) -> str | None:
     return (
         clean_text(element.text)
         or clean_text(element.get_attribute("textContent"))
@@ -69,16 +57,97 @@ def _text(driver: WebDriver, selector_group: tuple[str, ...], timeout: int = 1) 
     )
 
 
-def _all_text(driver: WebDriver, selector_group: tuple[str, ...]) -> tuple[str, ...]:
-    values: list[str] = []
+def _text(driver: WebDriver, selector_group: tuple[str, ...], timeout: int = 1) -> str | None:
     for selector in selector_group:
-        for element in driver.find_elements(By.CSS_SELECTOR, selector):
-            text = clean_text(element.text)
-            if text and text not in values:
-                values.append(text)
-        if values:
-            break
-    return tuple(values)
+        try:
+
+            def read_text(current: WebDriver, css_selector: str = selector) -> str | None:
+                return _element_text(current.find_element(By.CSS_SELECTOR, css_selector))
+
+            return WebDriverWait(
+                driver,
+                timeout,
+                ignored_exceptions=(NoSuchElementException, StaleElementReferenceException),
+            ).until(read_text)
+        except TimeoutException:
+            continue
+    return None
+
+
+def _attribute(
+    driver: WebDriver, selector_group: tuple[str, ...], name: str, timeout: int = 1
+) -> str | None:
+    for selector in selector_group:
+        try:
+
+            def read_attribute(current: WebDriver, css_selector: str = selector) -> str | None:
+                return current.find_element(By.CSS_SELECTOR, css_selector).get_attribute(name)
+
+            return WebDriverWait(
+                driver,
+                timeout,
+                ignored_exceptions=(NoSuchElementException, StaleElementReferenceException),
+            ).until(read_attribute)
+        except TimeoutException:
+            continue
+    return None
+
+
+def _click(driver: WebDriver, selector_group: tuple[str, ...], timeout: int) -> bool:
+    for selector in selector_group:
+        try:
+
+            def click(current: WebDriver, css_selector: str = selector) -> bool:
+                current.find_element(By.CSS_SELECTOR, css_selector).click()
+                return True
+
+            WebDriverWait(
+                driver,
+                timeout,
+                ignored_exceptions=(NoSuchElementException, StaleElementReferenceException),
+            ).until(click)
+            return True
+        except TimeoutException:
+            continue
+    return False
+
+
+def _fill(driver: WebDriver, selector_group: tuple[str, ...], value: str, timeout: int) -> bool:
+    for selector in selector_group:
+        try:
+
+            def fill(current: WebDriver, css_selector: str = selector) -> bool:
+                element = current.find_element(By.CSS_SELECTOR, css_selector)
+                element.clear()
+                element.send_keys(value)
+                return True
+
+            WebDriverWait(
+                driver,
+                timeout,
+                ignored_exceptions=(NoSuchElementException, StaleElementReferenceException),
+            ).until(fill)
+            return True
+        except TimeoutException:
+            continue
+    return False
+
+
+def _all_text(driver: WebDriver, selector_group: tuple[str, ...]) -> tuple[str, ...]:
+    for selector in selector_group:
+        for _ in range(3):
+            try:
+                values: list[str] = []
+                for element in driver.find_elements(By.CSS_SELECTOR, selector):
+                    text = clean_text(element.text)
+                    if text and text not in values:
+                        values.append(text)
+                if values:
+                    return tuple(values)
+                break
+            except StaleElementReferenceException:
+                continue
+    return ()
 
 
 def _check_page_state(driver: WebDriver) -> None:
@@ -105,19 +174,17 @@ def _set_location(
 ) -> tuple[LocationStatus, str | None]:
     if not context.requested_location:
         return LocationStatus.DEFAULT, _text(driver, selectors.LOCATION_DISPLAY, 1)
-    trigger = _first(driver, selectors.LOCATION_TRIGGER, settings.element_timeout_seconds)
-    if not trigger:
+    if not _click(driver, selectors.LOCATION_TRIGGER, settings.element_timeout_seconds):
         return LocationStatus.UNSUPPORTED, None
-    trigger.click()
-    location_input = _first(driver, selectors.LOCATION_INPUT, settings.element_timeout_seconds)
-    if not location_input:
+    if not _fill(
+        driver,
+        selectors.LOCATION_INPUT,
+        context.requested_location,
+        settings.element_timeout_seconds,
+    ):
         return LocationStatus.UNSUPPORTED, None
-    location_input.clear()
-    location_input.send_keys(context.requested_location)
-    apply = _first(driver, selectors.LOCATION_APPLY, settings.element_timeout_seconds)
-    if not apply:
+    if not _click(driver, selectors.LOCATION_APPLY, settings.element_timeout_seconds):
         return LocationStatus.UNVERIFIED, None
-    apply.click()
     expected = context.geo_key.replace(" ", "")
 
     def location_was_applied(current: WebDriver) -> bool:
@@ -129,7 +196,11 @@ def _set_location(
         return False
 
     try:
-        WebDriverWait(driver, settings.element_timeout_seconds).until(location_was_applied)
+        WebDriverWait(
+            driver,
+            settings.element_timeout_seconds,
+            ignored_exceptions=(StaleElementReferenceException,),
+        ).until(location_was_applied)
     except TimeoutException:
         observed = _text(driver, selectors.LOCATION_DISPLAY, 1)
         return LocationStatus.UNVERIFIED, observed
@@ -145,6 +216,18 @@ class AmazonSeleniumScraper:
         self.sleep = sleep
 
     def scrape_product(self, context: CollectionContext) -> ScrapeOutcome:
+        for attempt in range(2):
+            try:
+                return self._scrape_product_once(context)
+            except StaleElementReferenceException:
+                if attempt:
+                    break
+        return ScrapeOutcome(
+            code=ScrapeErrorCode.BROWSER_ERROR,
+            message="Amazon repeatedly changed the product page during extraction",
+        )
+
+    def _scrape_product_once(self, context: CollectionContext) -> ScrapeOutcome:
         try:
             with chrome_session(self.settings, context.key.domain) as driver:
                 driver.get(marketplace_url(context.key.domain))
@@ -162,8 +245,7 @@ class AmazonSeleniumScraper:
                     )
                 price_text = _text(driver, selectors.PRICE, 2)
                 price_amount, currency = parse_decimal_price(price_text, context.key.domain)
-                image = _first(driver, selectors.IMAGE, 1)
-                image_url = image.get_attribute("src") if image else None
+                image_url = _attribute(driver, selectors.IMAGE, "src")
                 snapshot = ProductSnapshot(
                     context_id=context.id,
                     requested_asin=context.key.asin,
@@ -204,6 +286,8 @@ class AmazonSeleniumScraper:
             return ScrapeOutcome(code=exc.code, message=str(exc))
         except TimeoutException:
             return ScrapeOutcome(code=ScrapeErrorCode.TIMEOUT, message="Amazon page timed out")
+        except StaleElementReferenceException:
+            raise
         except WebDriverException as exc:
             message = getattr(exc, "msg", None) or str(exc)
             return ScrapeOutcome(
@@ -238,19 +322,36 @@ class AmazonSeleniumScraper:
                     if not cards:
                         break
                     page_asins: set[str] = set()
-                    for card in cards:
-                        asin = (card.get_attribute("data-asin") or "").strip().upper()
+                    for index in range(len(cards)):
+                        candidate_data = None
+                        for attempt in range(2):
+                            try:
+                                card = (
+                                    cards[index]
+                                    if not attempt
+                                    else driver.find_elements(
+                                        By.CSS_SELECTOR, selectors.SEARCH_CARD
+                                    )[index]
+                                )
+                                asin = (card.get_attribute("data-asin") or "").strip().upper()
+                                title = None
+                                for selector in selectors.SEARCH_TITLE:
+                                    found = card.find_elements(By.CSS_SELECTOR, selector)
+                                    if found:
+                                        title = clean_text(found[0].text)
+                                        break
+                                link = card.find_elements(By.CSS_SELECTOR, selectors.SEARCH_LINK)
+                                url = link[0].get_attribute("href") if link else None
+                                sponsored = "sponsored" in card.text.lower()
+                                candidate_data = asin, title, url, sponsored
+                                break
+                            except (StaleElementReferenceException, IndexError):
+                                continue
+                        if candidate_data is None:
+                            continue
+                        asin, title, url, sponsored = candidate_data
                         if len(asin) != 10 or asin == context.key.asin or asin in seen:
                             continue
-                        title = None
-                        for selector in selectors.SEARCH_TITLE:
-                            found = card.find_elements(By.CSS_SELECTOR, selector)
-                            if found:
-                                title = clean_text(found[0].text)
-                                break
-                        link = card.find_elements(By.CSS_SELECTOR, selectors.SEARCH_LINK)
-                        url = link[0].get_attribute("href") if link else None
-                        sponsored = "sponsored" in card.text.lower()
                         seen.add(asin)
                         page_asins.add(asin)
                         candidates.append(
@@ -266,11 +367,14 @@ class AmazonSeleniumScraper:
                     if not page_asins:
                         break
                     next_buttons = driver.find_elements(By.CSS_SELECTOR, selectors.NEXT_PAGE[0])
-                    if (
-                        page >= pages
-                        or not next_buttons
-                        or "disabled" in (next_buttons[0].get_attribute("class") or "")
-                    ):
+                    try:
+                        next_disabled = bool(
+                            next_buttons
+                            and "disabled" in (next_buttons[0].get_attribute("class") or "")
+                        )
+                    except StaleElementReferenceException:
+                        next_disabled = False
+                    if page >= pages or not next_buttons or next_disabled:
                         break
         except ScrapingError as exc:
             failures.append(ItemFailure(None, exc.code, str(exc)))
