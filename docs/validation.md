@@ -5,7 +5,7 @@
 - `uv lock` resolved the new Selenium and direct Pydantic dependencies and removed TinyDB.
 - `uv sync --locked --group dev` completed with Python 3.13.14.
 - `ruff check .`, `ruff format --check .`, and `mypy src main.py` pass.
-- `pytest -q --basetemp .test-tmp` passes 41 tests covering ASIN/domain/location validation, locale money parsing including INR, Groq and container browser configuration, downstream job prerequisites, SQLite migration/rollback/identity/snapshot/job idempotency, preservation of an existing database while adding `amazon.in`, partial competitor analysis, conservative comparison selection, bounded LLM output, stale-element recovery, persistent browser profile locking, one browser per job, paced navigation, bounded human challenge recovery, durable marketplace cooldowns, and a Streamlit form smoke test.
+- `pytest -q --basetemp .test-tmp` passes 42 tests covering ASIN/domain/location validation, locale money parsing including INR, Groq and container browser configuration, downstream job prerequisites, SQLite migration/rollback/identity/snapshot/job idempotency, preservation of an existing database while adding `amazon.in`, partial competitor analysis, conservative comparison selection, bounded LLM output, stale-element recovery, persistent browser profile locking, one browser per job, paced navigation, bounded human challenge recovery, durable marketplace cooldowns, and Streamlit input and challenge-link smoke tests.
 - `pip-audit` passes with no known vulnerabilities after locking `langchain-groq` 1.1.3, the Groq SDK 0.37.1, and their transitive dependencies.
 - A real Selenium session starts and exits successfully in the production worker image with its pinned Chromium and ChromeDriver 154 pair.
 
@@ -18,6 +18,8 @@ A containerized live check of `amazon.in` verified PIN `273015`, parsed an INR p
 After the stale-element recovery change, a containerized retry of ASIN `B0H3TV3MLG` on `amazon.in` succeeded and saved a product snapshot with a parsed INR price and verified PIN `273015`.
 
 The challenge recovery tests use simulated browser pages. A real CAPTCHA still needs a human in the visible browser; passing tests do not establish that Amazon will allow any particular visit.
+
+In the updated Docker stack, the worker opened a visible Selenium Chromium 152 session through the browser service. The live retry of `B0B7RQ46LD` on `amazon.in` succeeded. The previously blocked competitor refresh for `B01CCGW4OE` then completed with 20 saved listings. The database migration passed integrity and foreign-key checks; the dashboard and browser view stayed bound to localhost.
 
 ## Next operational validation
 
