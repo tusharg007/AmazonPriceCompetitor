@@ -1,5 +1,6 @@
 import hashlib
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -10,6 +11,7 @@ import src.db as db_module
 from src.config import PROJECT_ROOT, Settings
 from src.db import DatabaseError, SQLiteRepository
 from src.jobs import enqueue_analysis, enqueue_competitors
+from src.llm import build_analysis_input
 from src.models import JobKind, JobStatus, LocationStatus, ProductKey, ProductSnapshot
 
 
@@ -98,13 +100,70 @@ def test_downstream_jobs_require_completed_inputs(tmp_path: Path) -> None:
 
     with pytest.raises(DatabaseError, match="Scrape the product"):
         enqueue_competitors(repo, context.id)
-    with pytest.raises(DatabaseError, match="Scrape the product"):
+    with pytest.raises(DatabaseError, match="at least one competitor"):
         enqueue_analysis(repo, context.id)
 
     repo.save_snapshot(snapshot(context.id))
     assert enqueue_competitors(repo, context.id).kind == JobKind.DISCOVER_COMPETITORS
-    with pytest.raises(DatabaseError, match="competitor refresh"):
+    with pytest.raises(DatabaseError, match="at least one competitor"):
         enqueue_analysis(repo, context.id)
+
+
+def test_partial_competitor_evidence_can_be_analyzed_without_replacing_complete_run(
+    tmp_path: Path,
+) -> None:
+    repo = SQLiteRepository(settings_for(tmp_path / "partial.sqlite3"))
+    parent = repo.get_or_create_context(ProductKey("B0CX23VSAS", "com"), "00123")
+    competitor = repo.get_or_create_context(ProductKey("B0DLBH8CBZ", "com"), "00123")
+    parent_snapshot_id = repo.save_snapshot(snapshot(parent.id))
+    competitor_snapshot_id = repo.save_snapshot(
+        replace(
+            snapshot(competitor.id),
+            requested_asin="B0DLBH8CBZ",
+            resolved_asin="B0DLBH8CBZ",
+            canonical_url="https://www.amazon.com/dp/B0DLBH8CBZ",
+        )
+    )
+    queued = enqueue_competitors(repo, parent.id)
+    claimed = repo.claim_next_job("test-worker")
+    assert claimed and claimed.id == queued.id and claimed.lease_token
+    run_id = repo.create_competitor_run(parent.id, parent_snapshot_id, claimed.id)
+    assert repo.publish_competitor_run(
+        run_id,
+        JobStatus.PARTIAL,
+        [(competitor.id, competitor_snapshot_id, 1, "watch", False, None)],
+        [{"asin": "B0MISSING1", "code": "blocked", "message": "Blocked"}],
+        claimed.id,
+        claimed.lease_token,
+    )
+    assert repo.finish_job(claimed.id, claimed.lease_token, JobStatus.PARTIAL)
+    assert repo.get_active_run_id(parent.id) is None
+
+    later_snapshot_id = repo.save_snapshot(
+        replace(snapshot(parent.id), capture_key="later-capture", title="Later product title")
+    )
+    assert later_snapshot_id != parent_snapshot_id
+
+    run = repo.get_analysis_run(parent.id)
+    assert run and run["id"] == run_id and run["status"] == "partial"
+    assert run["completed_count"] == 1 and run["failure_count"] == 1
+    frozen_parent_id, selected_run_id, evidence, input_hash = build_analysis_input(repo, parent.id)
+    assert frozen_parent_id == parent_snapshot_id
+    assert selected_run_id == run_id
+    assert evidence["product"]["title"] == "Example product"
+    assert evidence["competitors"][0]["asin"] == "B0DLBH8CBZ"
+    assert evidence["rules"]["competitor_run_status"] == "partial"
+    assert enqueue_analysis(repo, parent.id).kind == JobKind.ANALYZE
+
+    repo.save_analysis(
+        frozen_parent_id,
+        run_id,
+        input_hash,
+        "fake",
+        {"summary": "Limited evidence", "positioning": "Unknown", "top_competitors": []},
+    )
+    analysis = repo.latest_analysis(parent.id)
+    assert analysis and analysis["output"]["summary"] == "Limited evidence"
 
 
 def test_amazon_in_migration_preserves_existing_relationships(tmp_path: Path) -> None:

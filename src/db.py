@@ -528,6 +528,31 @@ class SQLiteRepository:
         context = self.get_context(context_id)
         return context.active_complete_run_id if context else None
 
+    def get_analysis_run(self, context_id: int) -> dict[str, Any] | None:
+        """Prefer a complete run; otherwise use the newest partial run with evidence."""
+        self.migrate()
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT r.id,r.parent_snapshot_id,r.status,r.candidate_count,r.completed_count,r.failures_json "
+                "FROM product_contexts c JOIN competitor_runs r ON r.parent_context_id=c.id "
+                "WHERE c.id=? AND r.completed_count>0 AND "
+                "(r.id=c.active_complete_run_id OR "
+                "(c.active_complete_run_id IS NULL AND r.status='partial')) "
+                "ORDER BY CASE WHEN r.id=c.active_complete_run_id THEN 0 ELSE 1 END, "
+                "r.completed_at DESC,r.id DESC LIMIT 1",
+                (context_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "parent_snapshot_id": row["parent_snapshot_id"],
+            "status": row["status"],
+            "candidate_count": row["candidate_count"],
+            "completed_count": row["completed_count"],
+            "failure_count": len(json.loads(row["failures_json"])),
+        }
+
     def save_analysis(
         self,
         parent_snapshot_id: int,
@@ -569,12 +594,15 @@ class SQLiteRepository:
         return int(row["id"])
 
     def latest_analysis(self, context_id: int) -> dict[str, Any] | None:
+        run = self.get_analysis_run(context_id)
+        if run is None:
+            return None
         self.migrate()
         with self.connection() as conn:
             row = conn.execute(
-                "SELECT a.* FROM product_contexts c JOIN analyses a ON a.competitor_run_id=c.active_complete_run_id "
-                "WHERE c.id=? AND a.status='succeeded' ORDER BY a.completed_at DESC LIMIT 1",
-                (context_id,),
+                "SELECT a.* FROM analyses a WHERE a.competitor_run_id=? AND a.status='succeeded' "
+                "ORDER BY a.completed_at DESC LIMIT 1",
+                (run["id"],),
             ).fetchone()
         if not row:
             return None

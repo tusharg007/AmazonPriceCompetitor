@@ -94,7 +94,8 @@ def render_selected_context(repo: SQLiteRepository) -> None:
         st.session_state.pop("selected_context_id", None)
         return
     snapshot = repo.get_latest_snapshot(context.id)
-    run_id = repo.get_active_run_id(context.id)
+    run = repo.get_analysis_run(context.id)
+    run_id = int(run["id"]) if run else None
     st.divider()
     st.subheader(f"Competitor analysis: {context.key.asin} on amazon.{context.key.domain}")
     render_snapshot(snapshot)
@@ -126,19 +127,31 @@ def render_selected_context(repo: SQLiteRepository) -> None:
                 st.error(str(exc))
     if run_id:
         rows = repo.get_competitor_rows(run_id)
-        st.caption(f"Current completed competitor run: {run_id} ({len(rows)} products)")
+        assert run is not None
+        if snapshot and run["parent_snapshot_id"] != snapshot["id"]:
+            st.caption(
+                f"Analysis uses product snapshot {run['parent_snapshot_id']} from this competitor run; "
+                "a newer product scrape is displayed above."
+            )
+        st.caption(
+            f"Competitor run {run_id}: {run['status']} · "
+            f"{run['completed_count']} saved of {run['candidate_count']} attempted"
+        )
+        if run["status"] == "partial":
+            st.warning(
+                "Some competitors could not be collected. Analysis will use only saved evidence."
+            )
         for row in rows:
             sponsored = " · sponsored" if row["sponsored"] else ""
             st.write(
                 f"{row['rank']}. {row['title'] or row['asin']} — {row['price_text'] or 'Unavailable'}{sponsored}"
             )
     else:
-        st.caption(
-            "No complete competitor run yet. A failed or partial refresh never replaces the previous complete run."
-        )
+        st.caption("No competitor evidence yet. Refresh competitors to enable analysis.")
     analysis = repo.latest_analysis(context.id)
     if analysis and analysis.get("output"):
         st.divider()
+        st.caption(f"Groq analysis completed: {analysis['completed_at']}")
         st.markdown(
             analysis_markdown(analysis["output"], repo.get_competitor_rows(run_id))
             if run_id
@@ -180,6 +193,10 @@ def main() -> None:
         repo = SQLiteRepository()
         repo.migrate()
         enqueue_product(repo)
+        if not st.session_state.get("selected_context_id"):
+            recent, _ = repo.list_tracked_contexts(1, 0)
+            if recent:
+                st.session_state["selected_context_id"] = recent[0].id
         render_last_job(repo)
         render_tracked_products(repo)
         render_selected_context(repo)
