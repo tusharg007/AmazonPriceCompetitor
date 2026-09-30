@@ -23,4 +23,4 @@ RUN mkdir -p /app/data /app/artifacts && chown -R app:app /app
 
 USER app
 EXPOSE 8501
-CMD ["uv", "run", "streamlit", "run", "main.py", "--server.address=0.0.0.0", "--server.port=8501"]
+CMD ["uv", "run", "--no-sync", "streamlit", "run", "main.py", "--server.address=0.0.0.0", "--server.port=8501"]

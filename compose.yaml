@@ -1,7 +1,7 @@
 services:
   migrate:
     build: .
-    command: ["uv", "run", "python", "-m", "scripts.db_admin", "migrate"]
+    command: ["uv", "run", "--no-sync", "python", "-m", "scripts.db_admin", "migrate"]
     env_file: .env
     environment:
       APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
@@ -26,7 +26,7 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    command: ["uv", "run", "python", "-m", "src.worker"]
+    command: ["uv", "run", "--no-sync", "python", "-m", "src.worker"]
     env_file: .env
     environment:
       APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
