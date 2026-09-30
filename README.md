@@ -43,7 +43,7 @@ SQLite provides the job queue, product and location identities, snapshot history
 | Human browser view | Selenium standalone Chromium, noVNC | Let a user complete a genuine Amazon browser check while the worker waits |
 | Storage and job queue | SQLite | Durable jobs, snapshots, competitor runs, analyses, migrations, and cooldowns |
 | AI analysis | LangChain, Groq, Pydantic | Request structured analysis over saved evidence and validate the returned data |
-| Deployment | Docker Compose | Run the UI, worker, migration task, and browser with persistent volumes |
+| Local orchestration | Docker Compose | Run the UI, worker, migration task, and browser with persistent volumes |
 | Quality checks | pytest, Ruff, mypy | Regression tests, lint and formatting, and static type checks |
 
 Key implementation modules are [`main.py`](main.py) for the UI, [`src/worker.py`](src/worker.py) for job execution, [`src/scraping/amazon.py`](src/scraping/amazon.py) for Selenium workflows, [`src/db.py`](src/db.py) for persistence, [`src/relevance.py`](src/relevance.py) for comparison selection, and [`src/llm.py`](src/llm.py) for grounded analysis.
@@ -69,7 +69,7 @@ docker compose exec -T app uv run --no-sync python -m scripts.db_admin health
 
 Open the [Streamlit app](http://localhost:8501). If a running job asks for a human browser check, open the [browser view](http://localhost:7900), click **Connect**, and use the password set in `.env`. The job resumes when the check is complete. `GROQ_API_KEY` is required only for **Analyze with LLM**.
 
-The `app-data` volume holds SQLite and the `browser-profiles` volume holds browser state. Keep both volumes when updating the stack. Back up SQLite with the [database admin command](docs/operations.md) before migrations or host changes. These services are designed for one host and one worker.
+The `app-data` volume holds SQLite and the `browser-profiles` volume holds browser state. Keep both volumes when updating the stack. Back up SQLite with the [database admin command](docs/operations.md) before migrations. These services are designed for one machine and one worker.
 
 ## Run the checks
 
@@ -85,11 +85,7 @@ uv run mypy src main.py
 
 Automated tests use simulated pages and model responses. Live Amazon access varies by marketplace, location, and time; the [validation record](docs/validation.md) distinguishes live checks from automated checks.
 
-## Deployment and limitations
-
-The complete application needs the Streamlit process, a continuously running worker, a Selenium browser service, and persistent local volumes. Deploy it on a Docker-capable host and expose the Streamlit UI through an authenticated HTTPS gateway or a private SSH tunnel. See the [operations runbook](docs/operations.md) for backup and recovery details.
-
-Streamlit Community Cloud runs a Streamlit entrypoint, but it does not provide the persistent Docker services and durable local storage this architecture requires. Publishing only `main.py` there would leave scraping jobs unprocessed and could lose the SQLite history. A Community Cloud version would need a separate hosted worker/browser backend and durable shared storage.
+## Limitations
 
 Amazon can still require a human CAPTCHA or deny access. Prices can be missing or location-dependent, and a saved snapshot is a point-in-time observation rather than a live price feed. Groq is a hosted API for open-weight models; its availability and free-tier limits depend on the provider. The application does not convert currencies or make claims about product authenticity.
 
