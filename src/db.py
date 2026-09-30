@@ -612,6 +612,27 @@ class SQLiteRepository:
         )
         return result
 
+    def default_tracked_context_id(self) -> int | None:
+        """Open the most recently analyzed tracked product, or the newest tracked product."""
+        self.migrate()
+        with self.connection() as conn:
+            analyzed = conn.execute(
+                "SELECT c.id FROM analyses a "
+                "JOIN competitor_runs r ON r.id=a.competitor_run_id "
+                "JOIN product_contexts c ON c.id=r.parent_context_id "
+                "WHERE c.is_tracked=1 AND a.status='succeeded' AND "
+                "(r.id=c.active_complete_run_id OR "
+                "(c.active_complete_run_id IS NULL AND r.status='partial' AND r.completed_count>0)) "
+                "ORDER BY a.completed_at DESC,a.id DESC LIMIT 1"
+            ).fetchone()
+            if analyzed:
+                return int(analyzed["id"])
+            recent = conn.execute(
+                "SELECT id FROM product_contexts WHERE is_tracked=1 "
+                "ORDER BY updated_at DESC,id DESC LIMIT 1"
+            ).fetchone()
+        return int(recent["id"]) if recent else None
+
     @staticmethod
     def _context(row: sqlite3.Row) -> CollectionContext:
         return CollectionContext(

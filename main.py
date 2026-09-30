@@ -194,9 +194,9 @@ def main() -> None:
         repo.migrate()
         enqueue_product(repo)
         if not st.session_state.get("selected_context_id"):
-            recent, _ = repo.list_tracked_contexts(1, 0)
-            if recent:
-                st.session_state["selected_context_id"] = recent[0].id
+            default_context_id = repo.default_tracked_context_id()
+            if default_context_id:
+                st.session_state["selected_context_id"] = default_context_id
         render_last_job(repo)
         render_tracked_products(repo)
         render_selected_context(repo)

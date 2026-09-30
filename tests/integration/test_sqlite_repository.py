@@ -113,7 +113,7 @@ def test_partial_competitor_evidence_can_be_analyzed_without_replacing_complete_
     tmp_path: Path,
 ) -> None:
     repo = SQLiteRepository(settings_for(tmp_path / "partial.sqlite3"))
-    parent = repo.get_or_create_context(ProductKey("B0CX23VSAS", "com"), "00123")
+    parent = repo.get_or_create_context(ProductKey("B0CX23VSAS", "com"), "00123", tracked=True)
     competitor = repo.get_or_create_context(ProductKey("B0DLBH8CBZ", "com"), "00123")
     parent_snapshot_id = repo.save_snapshot(snapshot(parent.id))
     competitor_snapshot_id = repo.save_snapshot(
@@ -164,6 +164,8 @@ def test_partial_competitor_evidence_can_be_analyzed_without_replacing_complete_
     )
     analysis = repo.latest_analysis(parent.id)
     assert analysis and analysis["output"]["summary"] == "Limited evidence"
+    repo.get_or_create_context(ProductKey("B0CX23VSAS", "com"), "90210", tracked=True)
+    assert repo.default_tracked_context_id() == parent.id
 
 
 def test_amazon_in_migration_preserves_existing_relationships(tmp_path: Path) -> None:
