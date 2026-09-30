@@ -51,6 +51,18 @@ def _decimal_text(value: Decimal | None) -> str | None:
     return format(value, "f")
 
 
+def _execute_migration(conn: sqlite3.Connection, sql: str) -> None:
+    """Execute SQL statements individually without commits between statements."""
+    statement = ""
+    for line in sql.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            conn.execute(statement)
+            statement = ""
+    if statement.strip() and not statement.lstrip().startswith("--"):
+        raise DatabaseError("Migration ended with an incomplete SQL statement")
+
+
 class SQLiteRepository:
     """Creates independent SQLite connections; no connection is shared across threads."""
 
@@ -97,26 +109,42 @@ class SQLiteRepository:
             raise DatabaseError(
                 f"SQLite {required}+ is required for production WAL safety; found {sqlite3.sqlite_version}"
             )
-        with self.transaction() as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS schema_migrations "
-                "(version TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)"
-            )
-            for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
-                sql = migration.read_text(encoding="utf-8")
-                checksum = hashlib.sha256(sql.encode()).hexdigest()
-                row = conn.execute(
-                    "SELECT checksum FROM schema_migrations WHERE version = ?", (migration.name,)
-                ).fetchone()
-                if row:
-                    if row["checksum"] != checksum:
-                        raise DatabaseError(f"Applied migration checksum changed: {migration.name}")
-                    continue
-                conn.executescript(sql)
+        with self.connection() as conn:
+            # Table rebuilds must temporarily disable FK enforcement on this
+            # connection. Check every reference before committing the upgrade.
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("BEGIN IMMEDIATE")
+            try:
                 conn.execute(
-                    "INSERT INTO schema_migrations(version, checksum, applied_at) VALUES (?, ?, ?)",
-                    (migration.name, checksum, iso()),
+                    "CREATE TABLE IF NOT EXISTS schema_migrations "
+                    "(version TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)"
                 )
+                for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                    sql = migration.read_text(encoding="utf-8")
+                    checksum = hashlib.sha256(sql.encode()).hexdigest()
+                    row = conn.execute(
+                        "SELECT checksum FROM schema_migrations WHERE version = ?",
+                        (migration.name,),
+                    ).fetchone()
+                    if row:
+                        if row["checksum"] != checksum:
+                            raise DatabaseError(
+                                f"Applied migration checksum changed: {migration.name}"
+                            )
+                        continue
+                    _execute_migration(conn, sql)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, checksum, applied_at) VALUES (?, ?, ?)",
+                        (migration.name, checksum, iso()),
+                    )
+                violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+                if violations:
+                    raise DatabaseError(f"Migration found {len(violations)} foreign-key violations")
+            except Exception:
+                conn.rollback()
+                raise
+            else:
+                conn.commit()
 
     def health(self) -> dict[str, str]:
         self.migrate()

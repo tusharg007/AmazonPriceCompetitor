@@ -1,10 +1,13 @@
+import hashlib
+import sqlite3
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-from src.config import Settings
+import src.db as db_module
+from src.config import PROJECT_ROOT, Settings
 from src.db import DatabaseError, SQLiteRepository
 from src.jobs import enqueue_analysis, enqueue_competitors
 from src.models import JobKind, JobStatus, LocationStatus, ProductKey, ProductSnapshot
@@ -102,3 +105,96 @@ def test_downstream_jobs_require_completed_inputs(tmp_path: Path) -> None:
     assert enqueue_competitors(repo, context.id).kind == JobKind.DISCOVER_COMPETITORS
     with pytest.raises(DatabaseError, match="competitor refresh"):
         enqueue_analysis(repo, context.id)
+
+
+def test_amazon_in_migration_preserves_existing_relationships(tmp_path: Path) -> None:
+    path = tmp_path / "existing.sqlite3"
+    initial = (PROJECT_ROOT / "migrations" / "001_initial.sql").read_text(encoding="utf-8")
+    with sqlite3.connect(path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.executescript(initial)
+        conn.execute(
+            "CREATE TABLE schema_migrations "
+            "(version TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO schema_migrations VALUES (?,?,?)",
+            ("001_initial.sql", hashlib.sha256(initial.encode()).hexdigest(), "now"),
+        )
+        conn.execute("INSERT INTO products VALUES (7,'B0CX23VSAS','com','now')")
+        conn.execute(
+            "INSERT INTO product_contexts"
+            "(id,product_id,geo_key,requested_location,is_tracked,created_at,updated_at)"
+            "VALUES (8,7,'00123','00123',1,'now','now')"
+        )
+        conn.execute(
+            "INSERT INTO product_snapshots"
+            "(id,context_id,capture_key,requested_asin,captured_at,location_status,source,extractor_version,created_at)"
+            "VALUES (9,8,'old','B0CX23VSAS','now','verified','selenium','1','now')"
+        )
+        conn.execute("UPDATE product_contexts SET latest_snapshot_id=9 WHERE id=8")
+        conn.execute(
+            "INSERT INTO jobs(id,kind,context_id,request_key,status,created_at) "
+            "VALUES ('old-job','scrape_product',8,'old','succeeded','now')"
+        )
+        conn.execute(
+            "INSERT INTO competitor_runs"
+            "(id,parent_context_id,parent_snapshot_id,job_id,strategy_version,status,created_at)"
+            "VALUES (10,8,9,'old-job','selenium-v1','succeeded','now')"
+        )
+        conn.execute(
+            "INSERT INTO competitor_run_items"
+            "(run_id,competitor_context_id,snapshot_id,rank,query_text) "
+            "VALUES (10,8,9,1,'watch')"
+        )
+        conn.execute(
+            "INSERT INTO analyses"
+            "(parent_snapshot_id,competitor_run_id,input_hash,model,prompt_version,schema_version,status,created_at)"
+            "VALUES (9,10,'hash','model','v1','v1','succeeded','now')"
+        )
+        conn.execute(
+            "INSERT INTO legacy_imports"
+            "(source_file_hash,source_record_id,target_snapshot_id,status,created_at)"
+            "VALUES ('source','row',9,'imported','now')"
+        )
+
+    repo = SQLiteRepository(settings_for(path))
+    repo.migrate()
+    india = repo.get_or_create_context(ProductKey("B0FCVFWFS4", "in"), "273015", tracked=True)
+    assert india.key.domain == "in"
+    assert repo.get_context(8) is not None
+    assert repo.get_latest_snapshot(8) is not None
+    assert repo.get_competitor_rows(10)
+    with repo.connection() as conn:
+        assert conn.execute("SELECT id FROM products WHERE asin='B0CX23VSAS'").fetchone()[0] == 7
+        assert conn.execute("SELECT COUNT(*) FROM analyses").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM legacy_imports").fetchone()[0] == 1
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2
+    repo.migrate()  # A restarted app must not replay the table rebuild.
+
+
+def test_failed_migration_rolls_back_every_statement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = SQLiteRepository(settings_for(tmp_path / "rollback-migration.sqlite3"))
+    repo.migrate()
+    migration_dir = tmp_path / "bad-migrations"
+    migration_dir.mkdir()
+    (migration_dir / "003_broken.sql").write_text(
+        "CREATE TABLE migration_probe (id INTEGER);\n"
+        "INSERT INTO migration_probe VALUES (1);\n"
+        "INSERT INTO nonexistent_table VALUES (1);\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(db_module, "MIGRATIONS_DIR", migration_dir)
+
+    with pytest.raises(sqlite3.OperationalError):
+        repo.migrate()
+    with repo.connection() as conn:
+        assert (
+            conn.execute("SELECT name FROM sqlite_master WHERE name='migration_probe'").fetchone()
+            is None
+        )
+        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2
