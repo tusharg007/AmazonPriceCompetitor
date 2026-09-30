@@ -5,6 +5,7 @@ from streamlit.testing.v1 import AppTest
 
 def test_empty_app_renders_input_form(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("APP_DATABASE_PATH", str(tmp_path / "ui.sqlite3"))
+    monkeypatch.setenv("APP_JOB_POLL_SECONDS", "0")
     app = AppTest.from_file(Path(__file__).resolve().parents[2] / "main.py")
     app.run()
     assert not app.exception

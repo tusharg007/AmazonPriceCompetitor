@@ -6,11 +6,11 @@ import math
 
 import streamlit as st
 
-from src.config import SUPPORTED_DOMAINS
+from src.config import SUPPORTED_DOMAINS, get_settings
 from src.db import DatabaseError, SQLiteRepository
 from src.jobs import enqueue_analysis, enqueue_competitors, enqueue_scrape
 from src.llm import analysis_markdown
-from src.models import ValidationError
+from src.models import JobStatus, ValidationError
 from src.services import create_tracked_context
 
 PAGE_SIZE = 10
@@ -146,6 +146,10 @@ def render_selected_context(repo: SQLiteRepository) -> None:
         )
 
 
+JOB_POLL_SECONDS = get_settings().job_poll_seconds
+
+
+@st.fragment(run_every=JOB_POLL_SECONDS if JOB_POLL_SECONDS > 0 else None)
 def render_last_job(repo: SQLiteRepository) -> None:
     job_id = st.session_state.get("last_job_id")
     if not job_id:
@@ -154,10 +158,19 @@ def render_last_job(repo: SQLiteRepository) -> None:
     if not job:
         return
     status = f"Job {job.id}: {job.status.value} ({job.progress}%)"
+    if job.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
+        st.progress(job.progress, text=status)
+        return
     if job.error_message:
         st.warning(f"{status} — {job.error_message}")
+    elif job.status == JobStatus.SUCCEEDED:
+        st.success(status)
     else:
         st.info(status)
+    refresh_key = f"terminal-job-refreshed-{job.id}"
+    if not st.session_state.get(refresh_key):
+        st.session_state[refresh_key] = True
+        st.rerun()
 
 
 def main() -> None:

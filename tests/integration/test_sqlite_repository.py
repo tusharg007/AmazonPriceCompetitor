@@ -17,6 +17,7 @@ def settings_for(path: Path) -> Settings:
         browser_binary=None,
         browser_no_sandbox=False,
         browser_disable_dev_shm_usage=False,
+        job_poll_seconds=0,
         page_timeout_seconds=30,
         element_timeout_seconds=10,
         job_timeout_seconds=900,

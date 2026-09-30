@@ -54,6 +54,7 @@ class Settings:
     browser_binary: str | None
     browser_no_sandbox: bool
     browser_disable_dev_shm_usage: bool
+    job_poll_seconds: float
     page_timeout_seconds: int
     element_timeout_seconds: int
     job_timeout_seconds: int
@@ -82,6 +83,7 @@ def get_settings() -> Settings:
         browser_binary=os.getenv("APP_BROWSER_BINARY") or None,
         browser_no_sandbox=_bool("APP_BROWSER_NO_SANDBOX", False),
         browser_disable_dev_shm_usage=_bool("APP_BROWSER_DISABLE_DEV_SHM_USAGE", False),
+        job_poll_seconds=_positive_float("APP_JOB_POLL_SECONDS", 2.0),
         page_timeout_seconds=_positive_int("APP_PAGE_TIMEOUT_SECONDS", 30),
         element_timeout_seconds=_positive_int("APP_ELEMENT_TIMEOUT_SECONDS", 10),
         job_timeout_seconds=_positive_int("APP_JOB_TIMEOUT_SECONDS", 900),
