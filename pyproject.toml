@@ -24,6 +24,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = ["live: explicitly enabled tests that can contact external services"]
 
 [tool.ruff]
