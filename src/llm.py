@@ -93,12 +93,12 @@ def run_analysis(
     repo: SQLiteRepository, context_id: int, settings: Settings | None = None
 ) -> dict[str, Any]:
     settings = settings or get_settings()
-    if not os.getenv("OPENAI_API_KEY"):
-        raise DatabaseError("OPENAI_API_KEY is required only to run analysis")
+    if not os.getenv("GROQ_API_KEY"):
+        raise DatabaseError("GROQ_API_KEY is required only to run analysis")
     parent_snapshot_id, run_id, evidence, input_hash = build_analysis_input(repo, context_id)
     from langchain_core.output_parsers import PydanticOutputParser
     from langchain_core.prompts import PromptTemplate
-    from langchain_openai import ChatOpenAI
+    from langchain_groq import ChatGroq
 
     parser = PydanticOutputParser(pydantic_object=LLMAnalysis)
     prompt = PromptTemplate(
@@ -113,7 +113,11 @@ def run_analysis(
         input_variables=["evidence"],
         partial_variables={"format_instructions": parser.get_format_instructions()},
     )
-    chain = prompt | ChatOpenAI(model=settings.openai_model, temperature=0, timeout=30) | parser
+    chain = (
+        prompt
+        | ChatGroq(model=settings.groq_model, temperature=0, timeout=30, max_retries=1)
+        | parser
+    )
     parsed = chain.invoke(
         {"evidence": json.dumps(evidence, ensure_ascii=False, default=_json_value)}
     )
@@ -124,7 +128,7 @@ def run_analysis(
             f"Analysis contained unsupported competitor ASINs: {', '.join(invalid)}"
         )
     output = parsed.model_dump(mode="json")
-    repo.save_analysis(parent_snapshot_id, run_id, input_hash, settings.openai_model, output)
+    repo.save_analysis(parent_snapshot_id, run_id, input_hash, settings.groq_model, output)
     return output
 
 

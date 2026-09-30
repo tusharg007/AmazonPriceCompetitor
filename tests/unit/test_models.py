@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import pytest
 
+from src.config import get_settings
 from src.models import ProductKey, ValidationError, normalize_geo
 from src.scraping.parsers import parse_decimal_price, parse_rating
 
@@ -37,3 +38,8 @@ def test_price_parsing_is_locale_aware(
 
 def test_rating_parser_handles_comma_separator() -> None:
     assert parse_rating("4,7 out of 5 stars") == 4.7
+
+
+def test_groq_model_is_configured_through_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_GROQ_MODEL", "llama-3.1-8b-instant")
+    assert get_settings().groq_model == "llama-3.1-8b-instant"

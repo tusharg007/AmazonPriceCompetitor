@@ -1,6 +1,6 @@
 # Amazon Competitor Analysis
 
-A Streamlit application that gathers Amazon product and competitor evidence through Selenium, stores immutable observations in SQLite, and produces grounded LLM analysis from saved snapshots.
+A Streamlit application that gathers Amazon product and competitor evidence through Selenium, stores immutable observations in SQLite, and produces grounded Groq analysis from saved snapshots.
 
 ## What changed
 
@@ -8,11 +8,11 @@ A Streamlit application that gathers Amazon product and competitor evidence thro
 - Selenium WebDriver is the only product and search page acquisition path.
 - SQLite replaces append-only JSON storage with product/location contexts, snapshots, durable jobs, competitor runs, analyses, migrations, and backups.
 - Browser work runs in a separate worker so Streamlit reruns do not create duplicate scraping or LLM requests.
-- Analysis is tied to the exact saved snapshots it used and rejects competitor ASINs that are not in those records.
+- Analysis uses Groq-hosted open-weight models, is tied to the exact saved snapshots it used, and rejects competitor ASINs that are not in those records.
 
 ## Quick start
 
-Install Python 3.13 and uv, copy `.env.example` to `.env`, then fill `OPENAI_API_KEY` only if analysis is needed.
+Install Python 3.13 and uv, copy `.env.example` to `.env`, then fill `GROQ_API_KEY` only if analysis is needed.
 
 ```powershell
 uv sync --locked --group dev
@@ -38,7 +38,7 @@ uv run pytest -q --basetemp .test-tmp
 uv run pip-audit
 ```
 
-Automated tests never contact Amazon or OpenAI. Live Selenium checks are intentionally separate because Amazon access, location controls, and selectors vary by marketplace.
+Automated tests never contact Amazon or Groq. Live Selenium checks are intentionally separate because Amazon access, location controls, and selectors vary by marketplace.
 
 ## Legacy TinyDB import
 
@@ -59,6 +59,6 @@ This release is designed for one host, one worker, one active browser job, and a
 
 ## Limits
 
-Selenium does not guarantee Amazon access. CAPTCHA, sign-in, blocked pages, unsupported delivery controls, price/variant differences, and selector changes are recorded as failures or partial results. The app does not use stealth automation, proxy rotation, CAPTCHA solving, or direct HTTP scrape fallbacks. Prices are not currency-converted, and the LLM’s recommendations are generated interpretation rather than verified marketplace facts.
+Selenium does not guarantee Amazon access. CAPTCHA, sign-in, blocked pages, unsupported delivery controls, price/variant differences, and selector changes are recorded as failures or partial results. The app does not use stealth automation, proxy rotation, CAPTCHA solving, or direct HTTP scrape fallbacks. Prices are not currency-converted, and the LLM’s recommendations are generated interpretation rather than verified marketplace facts. Groq provides hosted inference and its free tier is rate-limited; the hosted API is not itself open source.
 
 See [architecture](docs/architecture.md), [operations](docs/operations.md), and [validation](docs/validation.md) for the data model, runbook, and verification evidence.

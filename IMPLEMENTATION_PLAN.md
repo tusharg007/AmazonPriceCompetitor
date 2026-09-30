@@ -4,7 +4,7 @@ Prepared: 2026-09-30. Status: plan only; application implementation has not star
 
 ## 1. Objective and scope
 
-Replace every Oxylabs scraping path with Selenium WebDriver and replace TinyDB with SQLite. Preserve Python, Streamlit, LangChain, the OpenAI integration, python-dotenv, and uv. Preserve the user journey: enter an ASIN and marketplace/location, retrieve a product, discover competitors, refresh results, and request an LLM analysis.
+Replace every Oxylabs scraping path with Selenium WebDriver and replace TinyDB with SQLite. Preserve Python, Streamlit, LangChain, the Groq integration, python-dotenv, and uv. Preserve the user journey: enter an ASIN and marketplace/location, retrieve a product, discover competitors, refresh results, and request an LLM analysis.
 
 The attached tools screenshot describes the original stack. It is reference material; the user's replacement request governs this work.
 
@@ -12,7 +12,7 @@ Interpret “production grade” as demonstrable reliability, data correctness, 
 
 ### Fixed decisions
 
-- Keep the existing Streamlit frontend and LangChain/OpenAI integration. Do not introduce React, FastAPI, a different LLM framework/provider, PostgreSQL, MongoDB, Redis, Celery, or Kubernetes.
+- Keep the existing Streamlit frontend and LangChain/Groq integration. Do not introduce React, FastAPI, a different LLM framework/provider, PostgreSQL, MongoDB, Redis, Celery, or Kubernetes.
 - Use Selenium 4 with Chrome/Chromium for all live product and search acquisition. No Oxylabs API, requests/httpx product-page fallback, Playwright, stealth driver, proxy rotation, or CAPTCHA-solving service.
 - Use Python's built-in `sqlite3`, parameterized SQL, and numbered SQL migrations. An ORM and Alembic are unnecessary for this scope.
 - Keep Python 3.13 as the tested baseline. Preserve the existing package families; change versions only for a documented compatibility, support, or security reason. Check the actual bundled SQLite runtime separately from the Python version.
@@ -47,7 +47,7 @@ Inspected `main.py`, every current `src/*.py` module, `pyproject.toml`, `uv.lock
 | `.gitignore` | Does not ignore `.env`, runtime databases, or artifacts | Add these before any repository publication |
 | `README.md` | Empty | Setup, architecture, limitations, operations, and evidence of validation |
 
-The lock currently contains Streamlit 1.49.1, LangChain 0.3.27, langchain-core 0.3.76, langchain-openai 0.3.33, OpenAI 1.107.2, Pydantic 2.11.9, and TinyDB 4.8.2. These are the observed baseline, not recommendations to freeze old versions indefinitely. Declare Pydantic directly because the application imports it. Do not blindly apply current LangChain 1.x examples to the existing 0.3 integration.
+The historical lock contained Streamlit 1.49.1, LangChain 0.3.27, a proprietary-provider integration, Pydantic 2.11.9, and TinyDB 4.8.2. Implementation replaces the provider package with `langchain-groq` and regenerates the lock. Declare Pydantic directly because the application imports it.
 
 ## 3. Architecture and file boundaries
 
@@ -59,7 +59,7 @@ flowchart LR
     W --> SC[Selenium scraper]
     SC --> B[Chrome / Chromium]
     B --> A[Amazon pages]
-    W --> L[LangChain / OpenAI]
+    W --> L[LangChain / Groq]
     L --> V[Output validation]
     V --> DB
     UI --> R[Stored results and job progress]
@@ -228,15 +228,15 @@ Prefer a supported Streamlit fragment/timed refresh to poll stored progress. If 
 - Persist and reload completed analysis after reruns and restarts. Distinguish data age from analysis generation time.
 - Keep external text as text/normal Markdown; do not enable unsafe HTML. Render missing price as “Unavailable” and missing currency as unknown, never an assumed dollar amount.
 
-### LangChain/OpenAI behavior
+### LangChain/Groq behavior
 
-Keep the existing analysis purpose and provider. Configure the model through `OPENAI_MODEL`; use an available model compatible with the selected integration, without requiring any particular coding model or silently changing provider. Validate the API key only when analysis is requested so scraping works without an LLM key.
+Keep the existing analysis purpose and configure the model through `APP_GROQ_MODEL`, defaulting to `openai/gpt-oss-20b`. Validate `GROQ_API_KEY` only when analysis is requested so scraping works without an LLM key. Groq hosts inference for open-weight models; its hosted API is not open source and its free tier is rate-limited.
 
 Serialize a bounded, allowlisted input to JSON. Include product and competitor snapshot IDs, timestamps, exact decimal prices, ISO currencies, location/variant/comparability flags, and deterministic numeric comparisons. Compute min/median/percentage differences in Python for comparable offers only. Exclude unknown/mismatched currencies and zero/missing denominators; do not perform implicit FX conversion or present an observed offer as a complete shipping/tax-inclusive cost.
 
 Treat all scraped text as untrusted data. The prompt must prohibit following instructions embedded in titles/descriptions and must require grounding claims in supplied evidence. The model has no browser, SQL, shell, or other tool access. Bound text length, candidate count, output tokens, timeout, and retry count.
 
-Prefer schema-bound output if supported by the retained LangChain/OpenAI versions and configured model; otherwise retain the existing Pydantic parser with one bounded correction attempt. Verify APIs against the actual locked version. [LangChain structured-output method reference](https://reference.langchain.com/python/langchain-openai/chat_models/base/BaseChatOpenAI/with_structured_output)
+Use the existing Pydantic parser with a bounded retry policy. Verify the `ChatGroq` API against the actual locked version and keep requests deterministic.
 
 Validate every returned competitor ID against the selected input. Render factual titles, prices, ratings, currencies, and links from stored snapshots rather than trusting model-echoed facts. Reject malformed or unsupported claims where mechanically checkable. Keep recommendations labeled as generated interpretation. Persist input hash, exact source references, model/prompt/schema versions, validated output, and usage when available. Reuse an analysis only when these inputs match; errors must not be cached as successful analysis.
 
@@ -346,7 +346,7 @@ Gate: fresh checkout/container can start from documented commands; data survives
 
 | Area | Required evidence |
 | --- | --- |
-| Stack | Python/Streamlit/LangChain/OpenAI remain; Selenium acquires every live product/search page; SQLite is the only runtime persistent database |
+| Stack | Python/Streamlit/LangChain/Groq remain; Selenium acquires every live product/search page; SQLite is the only runtime persistent database |
 | Input | Invalid ASIN/domain/oversized location rejected before navigation; canonical URLs constructed safely |
 | Identity | Same ASIN in two domains and two locations creates distinct contexts with correct selections/widget keys |
 | Prices | `1,299.99`, `1.299,99`, `1 299,99`, CAD/USD ambiguity, null price, and non-English/locale-specific text tested |
@@ -399,7 +399,7 @@ Completion requires both replacements, working preserved user flows, the critica
 
 ```text
 Implement IMPLEMENTATION_PLAN.md in this repository, starting with Phase 0 and
-continuing in order. Preserve Python 3.13, Streamlit, LangChain, OpenAI, dotenv,
+continuing in order. Preserve Python 3.13, Streamlit, LangChain, Groq, dotenv,
 and uv. Replace all Oxylabs scraping with Selenium and all TinyDB runtime
 storage with SQLite. Follow the contracts, context identities, snapshot/run
 semantics, job lifecycle, and acceptance gates in the plan.

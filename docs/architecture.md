@@ -8,4 +8,4 @@ SQLite uses WAL, foreign keys, FULL synchronous mode, short `BEGIN IMMEDIATE` wr
 
 Selenium creates a fresh Chrome profile for each job and always quits the driver and deletes its profile. It uses explicit waits and named selector groups. It records blocked, timeout, location-verification, not-found, and variant-mismatch outcomes instead of presenting them as success. It does not use Oxylabs, direct HTTP page fetching, proxy rotation, anti-CAPTCHA services, or stealth drivers.
 
-The LLM receives bounded JSON generated from frozen snapshots, not database access or browser tools. It is instructed to treat product text as untrusted data and is rejected if it names a competitor ASIN absent from its evidence.
+Groq receives bounded JSON generated from frozen snapshots, not database access or browser tools. It is instructed to treat product text as untrusted data and is rejected if it names a competitor ASIN absent from its evidence. The default model is the open-weight `openai/gpt-oss-20b`; Groq is a hosted API, not an open-source service.

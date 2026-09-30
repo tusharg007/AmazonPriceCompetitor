@@ -60,7 +60,7 @@ class Settings:
     max_search_pages: int
     max_search_queries: int
     max_competitors: int
-    openai_model: str
+    groq_model: str
     artifact_dir: Path
     strict_sqlite_version: bool
 
@@ -86,7 +86,7 @@ def get_settings() -> Settings:
         max_search_pages=_positive_int("APP_MAX_SEARCH_PAGES", 2),
         max_search_queries=_positive_int("APP_MAX_SEARCH_QUERIES", 3),
         max_competitors=_positive_int("APP_MAX_COMPETITORS", 20),
-        openai_model=os.getenv("APP_OPENAI_MODEL", "gpt-4o-mini").strip(),
+        groq_model=os.getenv("APP_GROQ_MODEL", "openai/gpt-oss-20b").strip(),
         artifact_dir=artifact_dir,
         strict_sqlite_version=_bool("APP_STRICT_SQLITE_VERSION", False),
     )

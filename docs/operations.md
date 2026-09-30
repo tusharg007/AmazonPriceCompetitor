@@ -8,6 +8,8 @@ uv run python -m src.worker
 uv run streamlit run main.py
 ```
 
+Set `GROQ_API_KEY` in the process environment before requesting an analysis. `APP_GROQ_MODEL` is optional and defaults to `openai/gpt-oss-20b`. Keep these values in the deployment platform's secret store rather than source control.
+
 Use `uv run python -m scripts.db_admin health` before deployment. It reports the database path, SQLite runtime version, integrity check, and foreign-key check. Browser availability is an external deployment prerequisite; Selenium Manager helps local development, while a production image must provide a supported browser/driver pair.
 
 Back up a live database through SQLite's backup API:
