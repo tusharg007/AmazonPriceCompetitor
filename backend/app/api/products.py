@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response
 
-from app.api.deps import get_catalog_service, get_job_service
+from app.api.deps import collection_limit, get_catalog_service, get_job_service
 from app.models.schemas import (
     CollectionJobRead,
     CollectRequest,
@@ -63,6 +63,7 @@ async def stop_tracking(product_id: ProductID, service: Catalog) -> Response:
     response_model=CollectionJobRead,
     status_code=202,
     description="Persist a collection request for the standalone Playwright worker.",
+    dependencies=[Depends(collection_limit)],
 )
 async def collect(
     product_id: ProductID, service: Jobs, payload: CollectRequest | None = None

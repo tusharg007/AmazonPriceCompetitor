@@ -31,7 +31,12 @@ async def persistence(request, test_settings, tmp_path):
         if not url:
             pytest.skip("Set ACI_TEST_POSTGRES_URL for actual PostgreSQL API verification")
         assert (make_url(url).database or "").endswith("_test")
-        settings = Settings(app_env="testing", database_url=url, evidence_dir=tmp_path)
+        settings = Settings(
+            app_env="testing",
+            database_url=url,
+            evidence_dir=tmp_path,
+            api_rate_limit_per_minute=1000,
+        )
     else:
         settings = test_settings
     engine, factory = create_engine_and_session_factory(settings)

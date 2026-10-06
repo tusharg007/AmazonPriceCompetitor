@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_settings_dep
+from app.api.deps import analysis_limit, get_db, get_settings_dep
 from app.api.products import ProductID
 from app.core.config import Settings
 from app.models.schemas import AnalysisClaimResponse, AnalysisResponse, CollectionJobRead
@@ -25,7 +25,12 @@ def get_analysis_service(
 Service = Annotated[AnalysisService, Depends(get_analysis_service)]
 
 
-@router.post("/products/{product_id}/analyze", response_model=CollectionJobRead, status_code=202)
+@router.post(
+    "/products/{product_id}/analyze",
+    response_model=CollectionJobRead,
+    status_code=202,
+    dependencies=[Depends(analysis_limit)],
+)
 async def analyze(product_id: ProductID, service: Service) -> CollectionJobRead:
     return await service.enqueue(product_id)
 

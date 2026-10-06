@@ -1,5 +1,6 @@
 import hashlib
 import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -205,7 +206,7 @@ def test_partial_competitor_evidence_can_be_analyzed_without_replacing_complete_
 def test_amazon_in_migration_preserves_existing_relationships(tmp_path: Path) -> None:
     path = tmp_path / "existing.sqlite3"
     initial = (PROJECT_ROOT / "migrations" / "001_initial.sql").read_text(encoding="utf-8")
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn, conn:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.executescript(initial)
         conn.execute(

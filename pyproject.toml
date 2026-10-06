@@ -1,7 +1,7 @@
 [project]
 name = "amazonpricecompetitor"
 version = "0.1.0"
-description = "Selenium-based Amazon competitor research with durable SQLite evidence"
+description = "Evidence-backed Amazon competitor intelligence with FastAPI, React and Playwright"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -41,6 +41,13 @@ markers = ["live: explicitly enabled tests that can contact external services"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+
+[tool.coverage.run]
+source = ["backend/app"]
+omit = ["*/collector/amazon.py"]
+
+[tool.coverage.report]
+fail_under = 80
 
 [tool.mypy]
 python_version = "3.13"

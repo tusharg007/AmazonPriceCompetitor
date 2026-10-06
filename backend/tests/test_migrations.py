@@ -6,6 +6,7 @@ import io
 import os
 import sqlite3
 import uuid
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -61,7 +62,7 @@ def test_sqlite_upgrade_constraints_orm_match_and_downgrade(monkeypatch, test_se
     command.upgrade(cfg, "head")
     command.check(cfg)
     db_file = test_settings.database_url.removeprefix("sqlite+aiosqlite:///")
-    with sqlite3.connect(db_file) as db:
+    with closing(sqlite3.connect(db_file)) as db, db:
         db.execute("PRAGMA foreign_keys=ON")
         assert db.execute("SELECT version_num FROM alembic_version").fetchone() == (
             "004_analysis_evidence",
@@ -89,7 +90,7 @@ def test_sqlite_upgrade_constraints_orm_match_and_downgrade(monkeypatch, test_se
                 db.execute(sql, missing)
         assert db.execute("SELECT COUNT(*) FROM product_observations").fetchone() == (2,)
     command.downgrade(cfg, "base")
-    with sqlite3.connect(db_file) as db:
+    with closing(sqlite3.connect(db_file)) as db, db:
         assert not db.execute("SELECT name FROM sqlite_master WHERE name='products'").fetchone()
     command.upgrade(cfg, "head")
 
@@ -99,7 +100,7 @@ def test_existing_phase1_records_survive_phase2_upgrade(monkeypatch, test_settin
     cfg = config()
     command.upgrade(cfg, "001_initial")
     file = test_settings.database_url.removeprefix("sqlite+aiosqlite:///")
-    with sqlite3.connect(file) as db:
+    with closing(sqlite3.connect(file)) as db, db:
         db.execute("INSERT INTO products(asin,domain) VALUES ('B000000001','com')")
         db.execute(
             "INSERT INTO collection_jobs(id,kind,product_id,request_key) VALUES (?,?,?,?)",
@@ -119,7 +120,7 @@ def test_existing_phase1_records_survive_phase2_upgrade(monkeypatch, test_settin
         )
     command.upgrade(cfg, "head")
     command.check(cfg)
-    with sqlite3.connect(file) as db:
+    with closing(sqlite3.connect(file)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM products").fetchone() == (1,)
         assert db.execute("SELECT evidence_id FROM product_observations").fetchone() == ("c" * 64,)
         with pytest.raises(sqlite3.IntegrityError):
@@ -132,7 +133,7 @@ def test_existing_phase1_records_survive_phase2_upgrade(monkeypatch, test_settin
             ("e" * 32, "scrape_product", 1, "legacy-key", "succeeded"),
         )
     command.downgrade(cfg, "001_initial")
-    with sqlite3.connect(file) as db:
+    with closing(sqlite3.connect(file)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM product_observations").fetchone() == (1,)
         assert db.execute("SELECT COUNT(*) FROM collection_jobs").fetchone() == (2,)
     command.upgrade(cfg, "head")

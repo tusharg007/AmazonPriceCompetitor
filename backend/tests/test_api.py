@@ -438,6 +438,6 @@ async def test_evidence_read_os_error(async_client, db_session, monkeypatch):
     def unreadable(*args, **kwargs):
         raise PermissionError("secret path")
 
-    monkeypatch.setattr(Path, "read_bytes", unreadable)
+    monkeypatch.setattr(Path, "open", unreadable)
     response = await async_client.get(f"/api/evidence/{artifact.id}/content")
     assert response.status_code == 503 and "secret" not in response.text

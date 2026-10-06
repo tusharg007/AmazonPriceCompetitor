@@ -33,6 +33,12 @@ class EvidenceError(ApplicationError):
         super().__init__(message, "evidence_unavailable", status_code)
 
 
+class RateLimitError(ApplicationError):
+    def __init__(self, retry_after: int) -> None:
+        super().__init__("Request limit reached; retry later", "rate_limited", 429)
+        self.retry_after = retry_after
+
+
 class LeaseLostError(RuntimeError):
     """A stale worker must stop collecting and cannot publish observations or job results."""
 

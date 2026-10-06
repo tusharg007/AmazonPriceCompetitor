@@ -1,0 +1,73 @@
+services:
+  browser:
+    build:
+      context: .
+      dockerfile: Dockerfile.browser
+    shm_size: 2gb
+    environment:
+      SE_NODE_MAX_SESSIONS: "1"
+      SE_NODE_SESSION_TIMEOUT: "600"
+      SE_SESSION_REQUEST_TIMEOUT: "30"
+      SE_VNC_PASSWORD: ${APP_BROWSER_VNC_PASSWORD:-secret}
+    ports:
+      - "127.0.0.1:7900:7900"
+    volumes:
+      - browser-profiles:/home/seluser/amazon-profiles
+    healthcheck:
+      test: ["CMD", "/opt/bin/check-grid.sh", "--host", "0.0.0.0", "--port", "4444"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.v1
+    command: ["uv", "run", "--no-sync", "python", "-m", "scripts.db_admin", "migrate"]
+    env_file: .env
+    environment:
+      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
+    volumes:
+      - app-data:/app/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.v1
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
+      APP_BROWSER_RECOVERY_URL: http://localhost:7900/
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - app-data:/app/data
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.v1
+    depends_on:
+      browser:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ["uv", "run", "--no-sync", "python", "-m", "src.worker"]
+    env_file: .env
+    environment:
+      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
+      APP_BROWSER_BINARY: /usr/bin/chromium
+      APP_BROWSER_NO_SANDBOX: "true"
+      APP_BROWSER_DISABLE_DEV_SHM_USAGE: "true"
+      APP_BROWSER_HEADLESS: "false"
+      APP_SELENIUM_URL: http://browser:4444
+      APP_BROWSER_RECOVERY_URL: http://localhost:7900/
+      APP_MIN_NAVIGATION_INTERVAL_SECONDS: "5"
+    volumes:
+      - app-data:/app/data
+
+volumes:
+  app-data:
+  browser-profiles:

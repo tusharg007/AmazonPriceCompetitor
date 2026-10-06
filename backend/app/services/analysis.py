@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.analysis.claims import PROMPT_VERSION, SCHEMA_VERSION, build_claims, numeric_comparable
 from app.analysis.errors import AnalysisError
 from app.analysis.provider import AnalysisProvider, GroqProvider
+from app.analytics.prices import utc
 from app.core.config import Settings
 from app.core.database import get_db_session
 from app.core.exceptions import ApplicationError, NotFoundError
@@ -53,7 +54,13 @@ class AnalysisService:
                 "Refresh this listing to freeze its title and brand before analysis."
             )
         artifact = await catalog.evidence(self.session, observation.evidence_artifact_id)
-        if artifact is None or artifact.content_hash != observation.evidence_id:
+        if (
+            artifact is None
+            or artifact.content_hash != observation.evidence_id
+            or artifact.source_url != observation.source_url
+            or artifact.collector != observation.collector
+            or utc(artifact.captured_at) != utc(observation.captured_at)
+        ):
             raise AnalysisError("Observation evidence is unavailable or inconsistent.")
         await read_verified_evidence(self.settings, EvidenceArtifactRead.model_validate(artifact))
         record = observation_record(product, observation)
@@ -119,6 +126,13 @@ class AnalysisService:
 
     async def enqueue(self, product_id: int) -> CollectionJobRead:
         evidence = await self.build_input(product_id)
+        if (
+            len(json.dumps(evidence, ensure_ascii=False).encode())
+            > self.settings.max_analysis_input_bytes
+        ):
+            raise ApplicationError(
+                "Analysis evidence exceeds configured input limit", "input_too_large", 413
+            )
         digest = input_hash(evidence)
         completed = await analysis.find_run(
             self.session, product_id, digest, self.settings.groq_model

@@ -2,6 +2,7 @@
 
 import sqlite3
 import uuid
+from contextlib import closing
 
 import pytest
 from app.core.exceptions import ApplicationError
@@ -29,7 +30,12 @@ def test_progress_queued_to_terminal(socket_client, test_settings):
             "error_code": None,
             "error_message": None,
         }
-        with sqlite3.connect(test_settings.database_url.removeprefix("sqlite+aiosqlite:///")) as db:
+        with (
+            closing(
+                sqlite3.connect(test_settings.database_url.removeprefix("sqlite+aiosqlite:///"))
+            ) as db,
+            db,
+        ):
             db.execute(
                 "UPDATE collection_jobs SET status='succeeded',progress=100 WHERE id=?",
                 (uuid.UUID(job["id"]).hex,),

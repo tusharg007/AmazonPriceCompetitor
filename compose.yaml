@@ -1,67 +1,75 @@
+x-backend: &backend
+  build: .
+  image: aci-v2-backend:local
+  environment: &environment
+    APP_ENV: production
+    APP_DATABASE_URL: postgresql+asyncpg://aci:${POSTGRES_PASSWORD:-aci_local}@postgres:5432/aci
+    APP_EVIDENCE_DIR: /app/runtime/evidence
+    APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+    APP_GROQ_API_KEY: ${APP_GROQ_API_KEY:-${GROQ_API_KEY:-}}
+    APP_GROQ_MODEL: ${APP_GROQ_MODEL:-openai/gpt-oss-20b}
+    APP_MIN_NAVIGATION_INTERVAL_SECONDS: ${APP_MIN_NAVIGATION_INTERVAL_SECONDS:-5}
+    APP_MAX_COMPETITORS: ${APP_MAX_COMPETITORS:-20}
+    APP_MAX_SEARCH_PAGES: ${APP_MAX_SEARCH_PAGES:-2}
+    APP_BLOCK_COOLDOWN_SECONDS: ${APP_BLOCK_COOLDOWN_SECONDS:-300}
+    APP_API_RATE_LIMIT_PER_MINUTE: ${APP_API_RATE_LIMIT_PER_MINUTE:-5}
+    APP_MAX_EVIDENCE_BYTES: ${APP_MAX_EVIDENCE_BYTES:-5242880}
+    APP_MAX_ANALYSIS_INPUT_BYTES: ${APP_MAX_ANALYSIS_INPUT_BYTES:-131072}
+  volumes:
+    - runtime:/app/runtime
+  init: true
+
 services:
-  browser:
-    build:
-      context: .
-      dockerfile: Dockerfile.browser
-    shm_size: 2gb
+  postgres:
+    image: postgres:16
     environment:
-      SE_NODE_MAX_SESSIONS: "1"
-      SE_NODE_SESSION_TIMEOUT: "600"
-      SE_SESSION_REQUEST_TIMEOUT: "30"
-      SE_VNC_PASSWORD: ${APP_BROWSER_VNC_PASSWORD:-secret}
-    ports:
-      - "127.0.0.1:7900:7900"
+      POSTGRES_USER: aci
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aci_local}
+      POSTGRES_DB: aci
     volumes:
-      - browser-profiles:/home/seluser/amazon-profiles
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "/opt/bin/check-grid.sh", "--host", "0.0.0.0", "--port", "4444"]
+      test: ["CMD-SHELL", "pg_isready -U aci -d aci"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+  migrate:
+    <<: *backend
+    command: [".venv/bin/python", "-m", "alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  backend:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 10
-  migrate:
-    build: .
-    command: ["uv", "run", "--no-sync", "python", "-m", "scripts.db_admin", "migrate"]
-    env_file: .env
-    environment:
-      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
-    volumes:
-      - app-data:/app/data
-
-  app:
-    build: .
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    env_file: .env
-    environment:
-      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
-      APP_BROWSER_RECOVERY_URL: http://localhost:7900/
-    ports:
-      - "127.0.0.1:8501:8501"
-    volumes:
-      - app-data:/app/data
-
   worker:
-    build: .
+    <<: *backend
+    command: [".venv/bin/python", "-m", "app.worker.runner"]
+    shm_size: 1gb
+    stop_signal: SIGINT
+    stop_grace_period: 30s
     depends_on:
-      browser:
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: ["uv", "run", "--no-sync", "python", "-m", "src.worker"]
-    env_file: .env
-    environment:
-      APP_DATABASE_PATH: /app/data/amazon_competitor.sqlite3
-      APP_BROWSER_BINARY: /usr/bin/chromium
-      APP_BROWSER_NO_SANDBOX: "true"
-      APP_BROWSER_DISABLE_DEV_SHM_USAGE: "true"
-      APP_BROWSER_HEADLESS: "false"
-      APP_SELENIUM_URL: http://browser:4444
-      APP_BROWSER_RECOVERY_URL: http://localhost:7900/
-      APP_MIN_NAVIGATION_INTERVAL_SECONDS: "5"
-    volumes:
-      - app-data:/app/data
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:5173:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
-  app-data:
-  browser-profiles:
+  postgres-data:
+  runtime:

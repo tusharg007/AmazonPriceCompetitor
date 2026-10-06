@@ -28,6 +28,7 @@ logs/
 .ruff_cache/
 htmlcov/
 .coverage
+coverage*.json
 test-results/
 browser-profiles/
 .test-tmp/

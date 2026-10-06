@@ -20,7 +20,14 @@ from app.api.deps import get_settings_dep
 from app.api.health import router as health_router
 from app.core.config import Settings, get_settings
 from app.core.database import create_engine_and_session_factory
-from app.core.exceptions import ApplicationError, CooldownError, InputError, database_error
+from app.core.exceptions import (
+    ApplicationError,
+    CooldownError,
+    InputError,
+    RateLimitError,
+    database_error,
+)
+from app.core.rate_limit import RequestLimiter
 from app.models.base import Base
 from app.models.schemas import ErrorResponse, ValidationIssue
 
@@ -78,14 +85,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title=cfg.app_name,
         version=cfg.app_version,
-        description="Production-grade Amazon Competitor Intelligence V2 API with evidence-backed provenance.",
+        description="Amazon competitor research API with capture-backed provenance.",
         lifespan=lifespan,
     )
     app.state.settings = cfg
+    app.state.request_limiter = RequestLimiter(cfg.api_rate_limit_per_minute)
 
     @app.exception_handler(ApplicationError)
     async def application_error(_request: Request, exc: ApplicationError) -> JSONResponse:
-        headers = {"Retry-After": str(exc.retry_after)} if isinstance(exc, CooldownError) else None
+        headers = (
+            {"Retry-After": str(exc.retry_after)}
+            if isinstance(exc, (CooldownError, RateLimitError))
+            else None
+        )
         return JSONResponse(
             status_code=exc.status_code,
             content=ErrorResponse(error=exc.code, detail=str(exc)).model_dump(
@@ -123,7 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=False,  # Set True only if using cookies / HTTP auth
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
         expose_headers=["X-Total-Count"],
     )
@@ -131,7 +143,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Global exception handler for unhandled ValueErrors
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
-        return await application_error(request, InputError(str(exc)))
+        logger.error("Request value conversion failed: %s", type(exc).__name__)
+        return await application_error(request, InputError("Request contains an invalid value"))
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        logger.error("Unhandled request failure: %s", type(exc).__name__)
+        return await application_error(
+            request, ApplicationError("Unexpected request failure", "internal_error", 500)
+        )
 
     # ------------------------------------------------------------------
     # M-3: Register health router once at /api prefix.
@@ -140,7 +160,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # ------------------------------------------------------------------
     app.include_router(health_router, prefix=cfg.api_prefix)
     errors: dict[int | str, dict[str, Any]] = {
-        code: {"model": ErrorResponse} for code in (404, 409, 422, 429, 503)
+        code: {"model": ErrorResponse} for code in (404, 409, 413, 422, 429, 500, 503)
     }
     for router in (
         products.router,

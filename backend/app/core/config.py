@@ -16,7 +16,9 @@ class Settings(BaseSettings):
 
     app_name: str = "Amazon Competitor Intelligence V2"
     app_version: str = "2.0.0"
-    app_env: Literal["development", "testing", "production"] = "development"
+    app_env: Literal["development", "testing", "production"] = Field(
+        default="development", validation_alias=AliasChoices("APP_ENV", "APP_APP_ENV")
+    )
     api_prefix: str = "/api"
     log_level: str = "INFO"
 
@@ -35,6 +37,9 @@ class Settings(BaseSettings):
         default=Path("evidence"),
         description="Directory for storing raw HTML snapshots, screenshots, and metadata.",
     )
+    max_evidence_bytes: int = Field(default=5 * 1024 * 1024, gt=0, le=50 * 1024 * 1024)
+    max_analysis_input_bytes: int = Field(default=128 * 1024, gt=0, le=1024 * 1024)
+    api_rate_limit_per_minute: int = Field(default=5, ge=1, le=1000)
 
     # Playwright browser collection
     playwright_headless: bool = True

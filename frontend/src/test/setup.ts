@@ -1,8 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
+import { configure } from "@testing-library/dom";
 import { afterEach, beforeAll, afterAll, vi } from "vitest";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
+configure({ asyncUtilTimeout: 5000 }); // First dynamic route import can include the chart bundle.
 export const server = setupServer(
   http.get("*/api/products/:id/analytics", () =>
     HttpResponse.json({

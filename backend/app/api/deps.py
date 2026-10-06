@@ -14,6 +14,18 @@ from app.services.catalog import CatalogService
 from app.services.jobs import JobProgressService, JobService
 
 
+def collection_limit(request: Request) -> None:
+    request.app.state.request_limiter.check(
+        request.client.host if request.client else "unknown", "collection"
+    )
+
+
+def analysis_limit(request: Request) -> None:
+    request.app.state.request_limiter.check(
+        request.client.host if request.client else "unknown", "analysis"
+    )
+
+
 async def get_settings_dep(request: Request) -> Settings:
     """Dependency injecting application settings."""
     settings: Settings = request.app.state.settings

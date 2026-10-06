@@ -29,6 +29,8 @@ def build_claims(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     baseline = evidence["product"]
     competitors = {row["asin"]: row for row in evidence["competitors"]}
+    if any(not re.fullmatch(r"[A-Z0-9]{10}", row.asin) for row in parsed.top_competitors):
+        raise AnalysisError("Generated competitor identity is invalid. Retry analysis.")
     output = _bounded_analysis(parsed, set(competitors))
     claims: list[dict[str, Any]] = []
     withheld = 0

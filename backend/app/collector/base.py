@@ -21,8 +21,9 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright, asyn
 from playwright.async_api import Error as PlaywrightError
 
 from app.collector import selectors
-from app.collector.errors import PageNotFoundError, ScrapingBlockedError
+from app.collector.errors import PageNotFoundError, ScrapingBlockedError, ScrapingError
 from app.core.config import Settings, get_settings
+from app.models.enums import ScrapeErrorCode
 from app.models.schemas import SUPPORTED_DOMAINS
 
 logger = logging.getLogger(__name__)
@@ -299,6 +300,10 @@ class BrowserCollector(ABC):
         now = datetime.now(UTC)
         content = await page.content()
         encoded = content.encode("utf-8")
+        if len(encoded) > self.settings.max_evidence_bytes:
+            raise ScrapingError(
+                ScrapeErrorCode.UNAVAILABLE, "Captured HTML exceeds configured evidence size limit"
+            )
         content_hash = hashlib.sha256(encoded).hexdigest()
         size_bytes = len(encoded)
 

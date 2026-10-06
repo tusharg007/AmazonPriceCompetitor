@@ -148,6 +148,7 @@ def test_settings(tmp_path: Path) -> Settings:
         min_navigation_interval_seconds=0.0,
         page_timeout_seconds=5,
         element_timeout_seconds=2,
+        api_rate_limit_per_minute=1000,  # Rate limiting has dedicated default-budget tests.
     )
 
 

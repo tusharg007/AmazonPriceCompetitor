@@ -11,13 +11,28 @@ export function useJobProgress(id: string | null) {
   const client = useQueryClient();
   useEffect(() => {
     if (!id) return;
-    const socket = new WebSocket(socketURL(id));
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(socketURL(id));
+    } catch {
+      return; // The job query continues polling when sockets are unavailable.
+    }
     socket.onmessage = (event) => {
       try {
         const progress = JSON.parse(event.data) as Progress;
         if (
-          typeof progress.status !== "string" ||
-          typeof progress.progress !== "number"
+          ![
+            "queued",
+            "running",
+            "succeeded",
+            "partial",
+            "failed",
+            "cancelled",
+          ].includes(progress.status) ||
+          typeof progress.progress !== "number" ||
+          !Number.isFinite(progress.progress) ||
+          progress.progress < 0 ||
+          progress.progress > 100
         )
           return;
         setFrame({ id, progress });
