@@ -33,6 +33,7 @@ def test_phase4_upgrade_and_downgrade_preserve_prior_data(monkeypatch, test_sett
             ("b" * 32, 1, 2, 0.75),
         )
     command.upgrade(cfg, "003_match_evidence")
+    command.upgrade(cfg, "head")
     command.check(cfg)
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT count(*) FROM products").fetchone() == (2,)

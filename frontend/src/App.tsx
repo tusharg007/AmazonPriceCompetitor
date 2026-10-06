@@ -2,6 +2,7 @@ import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
 import { ProductDetail } from "./pages/ProductDetail";
 import { JobsPage } from "./pages/JobsPage";
+import { AnalysisView } from "./pages/AnalysisView";
 
 export function App() {
   return (
@@ -25,6 +26,7 @@ export function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/products/:id" element={<ProductDetail />} />
           <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/analyses/:id" element={<AnalysisView />} />
           <Route
             path="*"
             element={

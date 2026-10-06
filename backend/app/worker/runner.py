@@ -8,6 +8,8 @@ from typing import Any, Self
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.analysis.errors import AnalysisError
+from app.analysis.provider import AnalysisProvider
 from app.collector.amazon import AmazonCollector
 from app.collector.base import finish_cleanup
 from app.collector.errors import TRANSIENT_CODES, ScrapingError
@@ -16,6 +18,7 @@ from app.core.database import create_engine_and_session_factory, get_db_session
 from app.core.exceptions import LeaseLostError
 from app.models.enums import ScrapeErrorCode
 from app.repository import jobs
+from app.services.analysis import AnalysisWorkerService
 from app.services.collection import CollectionService, collection_error
 
 logger = logging.getLogger(__name__)
@@ -27,9 +30,11 @@ class CollectionWorker:
         factory: async_sessionmaker[AsyncSession],
         settings: Settings,
         collector_factory: Callable[[Settings], AmazonCollector] = AmazonCollector,
+        analysis_provider: AnalysisProvider | None = None,
     ) -> None:
         self.factory, self.settings, self.collector_factory = factory, settings, collector_factory
         self.collector: AmazonCollector | None = None
+        self.analysis_provider = analysis_provider
 
     async def __aenter__(self) -> Self:
         return self
@@ -76,7 +81,7 @@ class CollectionWorker:
             )
 
     async def execute(self, claim: jobs.ClaimedJob) -> None:
-        service: CollectionService | None = None
+        service: CollectionService | AnalysisWorkerService | None = None
         heartbeat: asyncio.Task[None] | None = None
         operation: asyncio.Task[None] | None = None
         result = dict(claim.result)
@@ -86,6 +91,12 @@ class CollectionWorker:
 
             async def collect() -> None:
                 nonlocal service
+                if claim.kind == "analyze":
+                    service = AnalysisWorkerService(
+                        self.factory, self.settings, claim, self.analysis_provider
+                    )
+                    await service.run()
+                    return
                 if claim.kind not in ("scrape_product", "discover_competitors"):
                     raise ScrapingError(
                         ScrapeErrorCode.INVALID_INPUT, "Unsupported collection job kind"
@@ -127,6 +138,16 @@ class CollectionWorker:
             raise
         except LeaseLostError:
             logger.warning("Stopped stale collection job %s", claim.id)
+        except AnalysisError as exc:
+            async with get_db_session(self.factory) as session:
+                await jobs.finish_job(
+                    session,
+                    claim,
+                    "failed",
+                    service.result if service else result,
+                    "analysis_failed",
+                    str(exc),
+                )
         except Exception as exc:  # noqa: BLE001 -- Persist a safe terminal outcome at the worker boundary.
             logger.error("Collection job %s failed: %s", claim.id, type(exc).__name__)
             result = service.result if service else result

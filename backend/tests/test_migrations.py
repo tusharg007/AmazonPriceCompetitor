@@ -15,7 +15,14 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from app.core.config import Settings
 from app.core.database import create_engine_and_session_factory
-from app.models.entities import CollectionJob, Product, ProductObservation
+from app.models.entities import (
+    AnalysisClaim,
+    AnalysisRun,
+    ClaimEvidence,
+    CollectionJob,
+    Product,
+    ProductObservation,
+)
 from sqlalchemy import UniqueConstraint, insert, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import make_url
@@ -30,7 +37,7 @@ def config() -> Config:
 
 
 def test_migration_import_and_single_head() -> None:
-    assert ScriptDirectory.from_config(config()).get_heads() == ["003_match_evidence"]
+    assert ScriptDirectory.from_config(config()).get_heads() == ["004_analysis_evidence"]
     spec = importlib.util.spec_from_file_location(
         "phase1_initial", BACKEND / "alembic/versions/001_initial_schema.py"
     )
@@ -57,7 +64,7 @@ def test_sqlite_upgrade_constraints_orm_match_and_downgrade(monkeypatch, test_se
     with sqlite3.connect(db_file) as db:
         db.execute("PRAGMA foreign_keys=ON")
         assert db.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "003_match_evidence",
+            "004_analysis_evidence",
         )
         db.execute("INSERT INTO products(asin,domain) VALUES ('B000000001','com')")
         row = (
@@ -197,7 +204,45 @@ def test_postgresql_upgrade_and_constraint_enforcement(monkeypatch, tmp_path) ->
                     "extraction_method": "structured_dom",
                     "evidence_id": "a" * 64,
                 }
-                await conn.execute(insert(ProductObservation).values(id=uuid.uuid4(), **values))
+                first_observation_id = uuid.uuid4()
+                await conn.execute(
+                    insert(ProductObservation).values(id=first_observation_id, **values)
+                )
+                run_id = uuid.uuid4()
+                identity = {
+                    "product_id": product_id,
+                    "input_hash": "b" * 64,
+                    "model": "test",
+                    "prompt_version": "v1",
+                    "schema_version": "v2",
+                    "input_evidence": {},
+                    "status": "succeeded",
+                }
+                await conn.execute(insert(AnalysisRun).values(id=run_id, **identity))
+                with pytest.raises(IntegrityError):
+                    async with conn.begin_nested():
+                        await conn.execute(insert(AnalysisRun).values(id=uuid.uuid4(), **identity))
+                claim_id = uuid.uuid4()
+                await conn.execute(
+                    insert(AnalysisClaim).values(
+                        id=claim_id,
+                        run_id=run_id,
+                        claim_type="summary",
+                        claim_text="Test-only interpretation",
+                    )
+                )
+                await conn.execute(
+                    insert(ClaimEvidence).values(
+                        claim_id=claim_id, observation_id=first_observation_id, role="baseline"
+                    )
+                )
+                with pytest.raises(IntegrityError):
+                    async with conn.begin_nested():
+                        await conn.execute(
+                            insert(ClaimEvidence).values(
+                                claim_id=claim_id, observation_id=uuid.uuid4(), role="competitor"
+                            )
+                        )
                 with pytest.raises(IntegrityError):
                     async with conn.begin_nested():
                         await conn.execute(

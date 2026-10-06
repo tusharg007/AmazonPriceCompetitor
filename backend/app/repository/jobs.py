@@ -62,7 +62,7 @@ async def active_job(
 
 
 async def enqueue(
-    session: AsyncSession, kind: str, product_id: int, request_key: str, options: dict[str, bool]
+    session: AsyncSession, kind: str, product_id: int, request_key: str, options: dict[str, Any]
 ) -> CollectionJob:
     insert = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
     statement = (
@@ -160,7 +160,7 @@ async def claim_next_job(
         .where(
             CollectionJob.status == "queued",
             CollectionJob.attempts < CollectionJob.max_attempts,
-            ~blocked,
+            or_(CollectionJob.kind == "analyze", ~blocked),
         )
         .order_by(CollectionJob.created_at, CollectionJob.id)
         .limit(1)

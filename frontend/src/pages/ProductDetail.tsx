@@ -6,6 +6,7 @@ import {
   useMatches,
   useProduct,
   useUntrack,
+  useAnalyze,
 } from "../api/queries";
 import { amount, timestamp } from "../format";
 import { Empty, ErrorNotice, Loading } from "../components/Feedback";
@@ -27,6 +28,7 @@ export function ProductDetail() {
   const matches = useMatches(id, status);
   const collect = useCollect(id);
   const untrack = useUntrack(id);
+  const analyze = useAnalyze(id);
   if (!Number.isInteger(id) || id <= 0)
     return <ErrorNotice error={new Error("Invalid product identifier.")} />;
   if (product.isPending) return <Loading />;
@@ -85,6 +87,16 @@ export function ProductDetail() {
             Collect evidence
           </button>
           <button
+            disabled={
+              analyze.isPending || !p.latest_observation || !p.competitor_count
+            }
+            onClick={() =>
+              analyze.mutate(undefined, { onSuccess: (j) => setJob(j.id) })
+            }
+          >
+            Analyze saved evidence
+          </button>
+          <button
             className="secondary"
             disabled={untrack.isPending}
             onClick={() =>
@@ -95,6 +107,7 @@ export function ProductDetail() {
           </button>
         </div>
         {collect.error && <ErrorNotice error={collect.error} />}{" "}
+        {analyze.error && <ErrorNotice error={analyze.error} />}
         {untrack.error && <ErrorNotice error={untrack.error} />}{" "}
         {job && <JobProgress id={job} />}
       </section>

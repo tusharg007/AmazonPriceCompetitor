@@ -344,6 +344,9 @@ async def test_missing_resources(async_client, method, path):
         ("get", "/api/jobs/00000000-0000-0000-0000-000000000001", None),
         ("get", "/api/evidence/00000000-0000-0000-0000-000000000001", None),
         ("get", "/api/evidence/00000000-0000-0000-0000-000000000001/content", None),
+        ("post", "/api/products/1/analyze", None),
+        ("get", "/api/analyses/00000000-0000-0000-0000-000000000001", None),
+        ("get", "/api/analyses/00000000-0000-0000-0000-000000000001/claims", None),
     ],
 )
 async def test_database_failures_sanitized(async_client, monkeypatch, method, path, payload):
@@ -374,14 +377,14 @@ async def test_failed_commit_rolls_back_registration(async_client, db_session, m
 
 
 @pytest.mark.asyncio
-async def test_swagger_documents_only_phase2_capabilities(async_client):
+async def test_swagger_documents_completed_capabilities(async_client):
     assert (await async_client.get("/docs")).status_code == 200
     paths = (await async_client.get("/openapi.json")).json()["paths"]
     assert "/api/products/{product_id}/observations" in paths
     assert "/api/evidence/{evidence_id}/content" in paths
-    assert not any(
-        token in path for path in paths for token in ("analyz", "analyses", "analytics", "position")
-    )
+    assert "/api/products/{product_id}/analyze" in paths
+    assert "/api/analyses/{run_id}" in paths
+    assert not any(token in path for path in paths for token in ("analytics", "position"))
 
 
 @pytest.mark.asyncio

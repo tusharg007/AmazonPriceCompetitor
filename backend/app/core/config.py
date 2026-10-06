@@ -62,9 +62,11 @@ class Settings(BaseSettings):
     )
 
     # Groq API (reserved for Phase 6, optional in Phase 1)
-    groq_api_key: str | None = None
+    groq_api_key: str | None = Field(
+        default=None, repr=False, validation_alias=AliasChoices("APP_GROQ_API_KEY", "GROQ_API_KEY")
+    )
     # H-6: Use a valid Groq model identifier (https://console.groq.com/docs/models)
-    groq_model: str = "llama3-8b-8192"
+    groq_model: str = "openai/gpt-oss-20b"
 
     model_config = SettingsConfigDict(
         env_file=".env",

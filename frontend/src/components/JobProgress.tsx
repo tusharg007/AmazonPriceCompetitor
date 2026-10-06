@@ -24,7 +24,7 @@ export function JobProgress({ id }: { id: string }) {
   return (
     <div className="job-progress" aria-live="polite">
       <div className="section-line">
-        <strong>Collection {progress.status}</strong>
+        <strong>Job {progress.status}</strong>
         <Link to="/jobs">View jobs</Link>
       </div>
       <progress value={progress.progress} max={100} />
@@ -32,9 +32,17 @@ export function JobProgress({ id }: { id: string }) {
         {progress.progress}% ·{" "}
         {progress.error_message ||
           (active(progress.status)
-            ? "The worker is collecting page evidence."
-            : "Collection finished. Saved evidence is shown below.")}
+            ? "The worker is executing this job."
+            : "Job finished. Inspect its saved results and status.")}
       </p>
+      {typeof query.data.result.analysis_id === "string" && (
+        <Link
+          className="button secondary"
+          to={`/analyses/${query.data.result.analysis_id}`}
+        >
+          View saved analysis
+        </Link>
+      )}
     </div>
   );
 }

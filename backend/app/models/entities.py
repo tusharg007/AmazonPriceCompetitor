@@ -325,3 +325,76 @@ class CollectionJob(Base):
     observations: Mapped[list[ProductObservation]] = relationship(
         "ProductObservation", back_populates="job"
     )
+
+
+class AnalysisRun(Base):
+    """Frozen input and validated output; deduplicated by capture and policy identity."""
+
+    __tablename__ = "analysis_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "product_id",
+            "input_hash",
+            "model",
+            "prompt_version",
+            "schema_version",
+            name="uq_analysis_identity",
+        ),
+        CheckConstraint("status IN ('succeeded','failed')", name="ck_analysis_status"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("collection_jobs.id", ondelete="SET NULL")
+    )
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    input_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    raw_output: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AnalysisClaim(Base):
+    __tablename__ = "analysis_claims"
+    __table_args__ = (
+        CheckConstraint(
+            "claim_type IN ('price_comparison','rating_comparison','positioning','recommendation','summary')",
+            name="ck_claim_type",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    claim_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    claim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    claim_value: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class ClaimEvidence(Base):
+    __tablename__ = "claim_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('baseline','competitor','supporting')", name="ck_claim_evidence_role"
+        ),
+    )
+    claim_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_claims.id", ondelete="CASCADE"), primary_key=True
+    )
+    observation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("product_observations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(50), nullable=False)

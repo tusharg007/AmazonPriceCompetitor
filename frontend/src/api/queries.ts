@@ -82,6 +82,13 @@ export function useCollect(id: number) {
   });
 }
 
+export function useAnalyze(id: number) {
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<Job>(`/api/products/${id}/analyze`, { method: "POST" }),
+  });
+}
+
 export function useUntrack(id: number) {
   const client = useQueryClient();
   return useMutation({

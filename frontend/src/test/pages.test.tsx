@@ -114,7 +114,9 @@ describe("pages and contracts", () => {
       await screen.findByText("No candidates in this selection"),
     ).toBeInTheDocument();
     expect(screen.getByText(/Missing prices are omitted/)).toBeInTheDocument();
-    expect(screen.queryByText(/Analyze/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Analyze saved evidence" }),
+    ).toBeDisabled();
   });
   it("shows product not-found response", async () => {
     server.use(

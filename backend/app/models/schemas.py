@@ -301,3 +301,42 @@ class HealthCheckResponse(BaseModel):
     database: dict[str, Any]
     browser_environment: dict[str, Any]
     timestamp: datetime
+
+
+class ClaimEvidenceDetail(APIResponse):
+    observation_id: uuid.UUID
+    product_id: int
+    product_asin: str
+    price_text: str | None
+    captured_at: datetime
+    source_url: str
+    collector: str
+    extraction_method: str
+    evidence_id: str
+    evidence_artifact_id: uuid.UUID | None
+    role: str
+
+
+class AnalysisClaimResponse(BaseModel):
+    id: uuid.UUID
+    claim_type: str
+    claim_text: str
+    claim_value: dict[str, Any] | None
+    evidence: list[ClaimEvidenceDetail]
+
+
+class AnalysisResponse(APIResponse):
+    id: uuid.UUID
+    product_id: int
+    job_id: uuid.UUID | None
+    input_hash: str
+    model: str
+    prompt_version: str
+    schema_version: str
+    status: str
+    error_message: str | None
+    created_at: datetime
+    completed_at: datetime | None
+    claims: list[AnalysisClaimResponse] = Field(default_factory=list)
+    withheld_quantitative_claims: int = 0
+    model_config = ConfigDict(from_attributes=True)
