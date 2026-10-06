@@ -33,5 +33,8 @@ browser-profiles/
 .test-tmp/
 .idea/
 .browsers/
+node_modules/
+frontend/coverage/
+frontend/playwright-report/
 evidence/
 backend/evidence/

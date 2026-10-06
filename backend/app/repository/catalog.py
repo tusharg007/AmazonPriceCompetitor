@@ -20,6 +20,10 @@ async def get_product(session: AsyncSession, product_id: int) -> Product | None:
     return await session.get(Product, product_id)
 
 
+async def get_products(session: AsyncSession, ids: list[int]) -> list[Product]:
+    return list(await session.scalars(select(Product).where(Product.id.in_(ids))))
+
+
 async def get_or_create_product(
     session: AsyncSession,
     asin: str,

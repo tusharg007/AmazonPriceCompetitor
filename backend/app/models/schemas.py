@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal, Self
 
@@ -150,7 +150,16 @@ class ProductCreate(BaseModel):
         return self
 
 
-class ProductRead(BaseModel):
+class APIResponse(BaseModel):
+    @field_validator("*", mode="after")
+    @classmethod
+    def explicit_utc(cls, value: Any) -> Any:
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        return value
+
+
+class ProductRead(APIResponse):
     """Product response model."""
 
     id: int
@@ -167,7 +176,7 @@ class ProductRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class EvidenceArtifactRead(BaseModel):
+class EvidenceArtifactRead(APIResponse):
     """Evidence artifact summary response."""
 
     id: uuid.UUID
@@ -182,7 +191,7 @@ class EvidenceArtifactRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ProductObservationRead(BaseModel):
+class ProductObservationRead(APIResponse):
     """Observation item response."""
 
     id: uuid.UUID
@@ -195,6 +204,7 @@ class ProductObservationRead(BaseModel):
     availability: str | None
     rating: float | None
     rating_count: int | None
+    location_status: str = "default"
     source_url: str
     captured_at: datetime
     collector: str
@@ -204,7 +214,7 @@ class ProductObservationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class CollectionJobRead(BaseModel):
+class CollectionJobRead(APIResponse):
     """Job status response."""
 
     id: uuid.UUID
@@ -266,6 +276,7 @@ class CompetitorRead(BaseModel):
     sponsored: bool
     search_query: str | None
     evidence_summary: dict[str, Any]
+    competitor: ProductResponse | None = None
     model_config = ConfigDict(from_attributes=True)
 
 

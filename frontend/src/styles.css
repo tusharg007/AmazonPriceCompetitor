@@ -1,0 +1,379 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: #18363a;
+  background: #f3f6f3;
+  font-synthesis: none;
+  line-height: 1.6;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px max(24px, calc((100vw - 1240px) / 2));
+  background: #123b39;
+  color: white;
+  gap: 20px;
+}
+a {
+  color: #09665e;
+  text-underline-offset: 3px;
+}
+header a {
+  color: white;
+  text-decoration: none;
+}
+header nav {
+  display: flex;
+  gap: 24px;
+}
+header nav a.active {
+  border-bottom: 2px solid #8fdac8;
+}
+.brand {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.brand span {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+}
+main {
+  max-width: 1240px;
+  margin: auto;
+  padding: 32px 24px 60px;
+}
+footer {
+  padding: 25px;
+  text-align: center;
+  color: #526965;
+  font-size: 13px;
+}
+.page-heading {
+  margin-bottom: 28px;
+}
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 12px;
+  color: #28746c;
+  font-weight: 700;
+}
+h1 {
+  font-size: clamp(27px, 4vw, 40px);
+  line-height: 1.2;
+  font-weight: 650;
+  margin: 10px 0;
+}
+h2 {
+  font-size: 22px;
+  font-weight: 650;
+  margin: 0 0 16px;
+}
+h3 {
+  font-size: 19px;
+  line-height: 1.4;
+  font-weight: 600;
+  margin: 14px 0;
+}
+p {
+  margin: 10px 0;
+}
+section {
+  margin: 26px 0;
+}
+.panel {
+  background: white;
+  border: 1px solid #d6e2dc;
+  border-radius: 14px;
+  padding: 25px;
+  box-shadow: 0 4px 16px #18363a05;
+}
+.section-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.section-line h2 {
+  margin: 0 0 10px;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 18px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 6px;
+}
+input,
+select {
+  font: inherit;
+  font-size: 15px;
+  padding: 11px;
+  border: 1px solid #a4bcb1;
+  border-radius: 7px;
+  background: white;
+  min-width: 0;
+}
+button,
+.button {
+  display: inline-block;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  background: #12685e;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 7px;
+  border: 1px solid #12685e;
+  cursor: pointer;
+  text-decoration: none;
+}
+button:hover,
+.button:hover {
+  background: #0b5048;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.secondary {
+  background: white;
+  color: #18574f;
+  border-color: #b8cbc2;
+}
+.secondary:hover {
+  background: #eaf4ef;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid #cb8d2c;
+  outline-offset: 3px;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 20px;
+}
+.product-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.product-card h3 {
+  flex: 1;
+}
+.price {
+  font-size: 27px;
+  font-weight: 650;
+}
+.muted,
+small {
+  color: #516960;
+  font-size: 13px;
+}
+small {
+  display: block;
+  margin-top: 5px;
+}
+.badge {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: #eaf1ed;
+  color: #31544a;
+  text-transform: capitalize;
+}
+.confirmed,
+.succeeded {
+  background: #d4ede0;
+  color: #1a633d;
+}
+.ambiguous,
+.partial {
+  background: #fff0c8;
+  color: #77550c;
+}
+.rejected,
+.failed {
+  background: #fce3dc;
+  color: #953c26;
+}
+.error {
+  background: #fff1ec;
+  color: #8c3522;
+  padding: 14px;
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.error button {
+  margin-left: 12px;
+}
+.feedback,
+.empty {
+  padding: 25px;
+  background: #edf4ef;
+  border-radius: 10px;
+}
+.empty {
+  text-align: center;
+}
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  margin-top: 22px;
+  font-size: 13px;
+}
+.table-scroll {
+  overflow: auto;
+  margin-top: 20px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+caption {
+  text-align: left;
+  color: #5e776b;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #f4f7f4;
+  white-space: nowrap;
+}
+th,
+td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #e3ece6;
+  vertical-align: top;
+}
+td:first-child {
+  min-width: 180px;
+}
+progress {
+  width: 100%;
+  height: 10px;
+  accent-color: #186b5d;
+}
+.job-progress {
+  padding: 20px;
+  background: #edf5f0;
+  border-radius: 10px;
+  margin-top: 20px;
+}
+.chart {
+  height: 300px;
+  margin: 20px 0;
+}
+.hash {
+  word-break: break-all;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+dialog {
+  border: 1px solid #9bb8aa;
+  border-radius: 14px;
+  padding: 28px;
+  width: min(720px, 92vw);
+  max-height: 85vh;
+  overflow: auto;
+  color: #18363a;
+}
+dialog::backdrop {
+  background: #0e2c2bb3;
+}
+.evidence-grid {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+  margin: 24px 0;
+}
+.evidence-grid dt {
+  font-weight: 650;
+  font-size: 13px;
+}
+.evidence-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.skip-link {
+  position: absolute;
+  left: 10px;
+  top: -100px;
+  background: white;
+  padding: 10px;
+  z-index: 10;
+}
+.skip-link:focus {
+  top: 10px;
+}
+@media (max-width: 700px) {
+  header {
+    padding: 18px 20px;
+  }
+  .brand span {
+    max-width: 150px;
+  }
+  main {
+    padding: 25px 16px;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .panel {
+    padding: 19px;
+  }
+  .section-line {
+    align-items: flex-start;
+  }
+  .pagination {
+    gap: 10px;
+  }
+  .evidence-grid {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+  .evidence-grid dd {
+    margin-bottom: 12px;
+  }
+  .chart {
+    height: 240px;
+  }
+}

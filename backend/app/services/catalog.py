@@ -94,9 +94,20 @@ class CatalogService:
         self, product_id: int, status: str | None, min_score: float
     ) -> list[CompetitorRead]:
         await self.require_product(product_id)
+        rows = await catalog.competitors(self.session, product_id, status, min_score)
+        details = {
+            p.id: p
+            for p in await self.responses(
+                await catalog.get_products(
+                    self.session, [row.competitor_product_id for row in rows]
+                )
+            )
+        }
         return [
-            CompetitorRead.model_validate(row)
-            for row in await catalog.competitors(self.session, product_id, status, min_score)
+            CompetitorRead.model_validate(row).model_copy(
+                update={"competitor": details.get(row.competitor_product_id)}
+            )
+            for row in rows
         ]
 
     async def evidence(self, evidence_id: UUID) -> EvidenceArtifactRead:

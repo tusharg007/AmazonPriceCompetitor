@@ -120,6 +120,10 @@ async def test_list_detail_history_and_untrack_preserve_provenance(
     detail = (await async_client.get(f"/api/products/{product['id']}")).json()
     assert detail["latest_observation"]["price_amount"] == "119.9999"
     assert detail["competitor_count"] == 1 and detail["last_collected_at"]
+    assert detail["last_collected_at"].endswith("Z")
+    candidates = (await async_client.get(f"/api/products/{product['id']}/competitors")).json()
+    assert candidates[0]["competitor"]["asin"] == later["asin"]
+    assert candidates[0]["competitor"]["latest_observation"] is None
     listing = await async_client.get("/api/products?page=2&limit=1")
     assert listing.json()["items"][0]["id"] == later["id"]
     assert listing.json()["total"] == 2
