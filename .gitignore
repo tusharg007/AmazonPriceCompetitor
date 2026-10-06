@@ -32,3 +32,6 @@ test-results/
 browser-profiles/
 .test-tmp/
 .idea/
+.browsers/
+evidence/
+backend/evidence/

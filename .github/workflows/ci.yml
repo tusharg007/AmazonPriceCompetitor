@@ -7,6 +7,22 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aci
+          POSTGRES_PASSWORD: aci_test
+          POSTGRES_DB: aci_phase1_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aci -d aci_phase1_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ACI_TEST_POSTGRES_URL: postgresql+asyncpg://aci:aci_test@localhost:5432/aci_phase1_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -15,7 +31,9 @@ jobs:
       - run: uv sync --locked --group dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy src main.py
+      - run: uv run mypy src main.py backend/app backend/alembic
+      - run: uv run playwright install --with-deps chromium
       - run: uv run pytest -q --basetemp .test-tmp
+      - run: uv run alembic -c backend/alembic.ini heads
       - run: uv run pip-audit
       - run: docker build .
