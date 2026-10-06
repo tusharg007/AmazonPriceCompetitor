@@ -6,18 +6,23 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from app.api import competitors, evidence, jobs, observations, products
 from app.api.deps import get_settings_dep
 from app.api.health import router as health_router
 from app.core.config import Settings, get_settings
 from app.core.database import create_engine_and_session_factory
+from app.core.exceptions import ApplicationError, CooldownError, InputError, database_error
 from app.models.base import Base
+from app.models.schemas import ErrorResponse, ValidationIssue
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = cfg
 
+    @app.exception_handler(ApplicationError)
+    async def application_error(_request: Request, exc: ApplicationError) -> JSONResponse:
+        headers = {"Retry-After": str(exc.retry_after)} if isinstance(exc, CooldownError) else None
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=ErrorResponse(error=exc.code, detail=str(exc)).model_dump(
+                mode="json", exclude_none=True
+            ),
+            headers=headers,
+        )
+
+    @app.exception_handler(SQLAlchemyError)
+    async def storage_error(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+        logger.error("Database request failed: %s", type(exc).__name__)
+        return await application_error(request, database_error(exc))
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content=ErrorResponse(
+                error="invalid_input",
+                detail="Request validation failed",
+                issues=[
+                    ValidationIssue(loc=list(e["loc"]), msg=e["msg"], type=e["type"])
+                    for e in exc.errors()
+                ],
+            ).model_dump(mode="json", exclude_none=True),
+        )
+
     # ------------------------------------------------------------------
     # C-4: CORS — never combine allow_origins=["*"] with allow_credentials=True.
     # Origins are configurable via APP_ALLOWED_ORIGINS (comma-separated) or
@@ -94,11 +129,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Global exception handler for unhandled ValueErrors
     @app.exception_handler(ValueError)
-    async def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"error": "Validation Error", "detail": str(exc)},
-        )
+    async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+        return await application_error(request, InputError(str(exc)))
 
     # ------------------------------------------------------------------
     # M-3: Register health router once at /api prefix.
@@ -106,6 +138,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # without registering the same router twice (which pollutes OpenAPI).
     # ------------------------------------------------------------------
     app.include_router(health_router, prefix=cfg.api_prefix)
+    errors: dict[int | str, dict[str, Any]] = {
+        code: {"model": ErrorResponse} for code in (404, 409, 422, 429, 503)
+    }
+    for router in (
+        products.router,
+        observations.router,
+        competitors.router,
+        evidence.router,
+        jobs.router,
+    ):
+        app.include_router(router, prefix=cfg.api_prefix, responses=errors)
+    app.include_router(jobs.socket_router)
 
     @app.get("/health", include_in_schema=False)
     async def root_health_alias(

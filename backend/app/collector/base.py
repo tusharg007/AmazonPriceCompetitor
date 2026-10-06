@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -20,6 +21,7 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright, asyn
 from playwright.async_api import Error as PlaywrightError
 
 from app.collector import selectors
+from app.collector.errors import PageNotFoundError, ScrapingBlockedError
 from app.core.config import Settings, get_settings
 from app.models.schemas import SUPPORTED_DOMAINS
 
@@ -51,14 +53,6 @@ class EvidenceArtifactData:
     collector: str
     captured_at: datetime
     evidence_type: str = "html"
-
-
-class ScrapingBlockedError(Exception):
-    """Raised when an anti-bot challenge (CAPTCHA, robot check) is encountered."""
-
-
-class PageNotFoundError(Exception):
-    """Raised when an Amazon product or page returns a 404 / dog page."""
 
 
 class BrowserCollector(ABC):
@@ -311,7 +305,23 @@ class BrowserCollector(ABC):
         storage_rel_path = f"{content_hash}.html"
         storage_abs_path = self.settings.evidence_dir / storage_rel_path
         storage_abs_path.parent.mkdir(parents=True, exist_ok=True)
-        storage_abs_path.write_bytes(encoded)
+
+        # Atomic replacement keeps an older observation's content-addressed file intact
+        # if a later capture of identical HTML fails while writing.
+        def write() -> None:
+            temporary: Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    dir=storage_abs_path.parent, suffix=".tmp", delete=False
+                ) as file:
+                    temporary = Path(file.name)
+                    file.write(encoded)
+                os.replace(temporary, storage_abs_path)
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+
+        await asyncio.to_thread(write)
 
         return EvidenceArtifactData(
             content_hash=content_hash,

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Annotated
 
-from fastapi import Request
+from fastapi import Depends, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.database import get_db_session
+from app.services.catalog import CatalogService
+from app.services.jobs import JobProgressService, JobService
 
 
 async def get_settings_dep(request: Request) -> Settings:
@@ -27,3 +30,21 @@ async def get_db(
     """
     async with get_db_session(request.app.state.session_factory) as session:
         yield session
+
+
+def get_catalog_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
+) -> CatalogService:
+    return CatalogService(session, settings)
+
+
+def get_job_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
+) -> JobService:
+    return JobService(session, settings)
+
+
+def get_progress_service(websocket: WebSocket) -> JobProgressService:
+    return JobProgressService(websocket.app.state.session_factory)

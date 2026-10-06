@@ -374,6 +374,9 @@ class AmazonCollector(BrowserCollector):
         base_search_url = f"{marketplace_url(domain)}/s?k={q}"
 
         candidates: list[ExtractedSearchCandidate] = []
+        # Preserve metadata for EVERY captured search page, including partial searches.
+        self.search_evidence: list[EvidenceArtifactData] = []
+        self.search_candidates = candidates
         latest_evidence: EvidenceArtifactData | None = None
 
         async with self.session(domain) as page:
@@ -384,6 +387,7 @@ class AmazonCollector(BrowserCollector):
                 await self.check_page_state(page)
 
                 evidence = await self.capture_evidence(page, self.COLLECTOR_NAME)
+                self.search_evidence.append(evidence)
                 latest_evidence = evidence
 
                 cards: Locator = page.locator(selectors.SEARCH_CARD)

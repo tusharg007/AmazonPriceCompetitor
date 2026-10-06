@@ -15,12 +15,12 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from app.core.config import Settings
 from app.core.database import create_engine_and_session_factory
-from app.models.entities import Product, ProductObservation
+from app.models.entities import CollectionJob, Product, ProductObservation
 from sqlalchemy import UniqueConstraint, insert, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.schema import CreateTable
+from sqlalchemy.schema import CreateIndex, CreateTable
 
 BACKEND = Path(__file__).resolve().parents[1]
 
@@ -30,7 +30,7 @@ def config() -> Config:
 
 
 def test_migration_import_and_single_head() -> None:
-    assert ScriptDirectory.from_config(config()).get_heads() == ["001_initial"]
+    assert ScriptDirectory.from_config(config()).get_heads() == ["002_active_job_dedup"]
     spec = importlib.util.spec_from_file_location(
         "phase1_initial", BACKEND / "alembic/versions/001_initial_schema.py"
     )
@@ -39,6 +39,13 @@ def test_migration_import_and_single_head() -> None:
     spec.loader.exec_module(module)
     assert module.revision == "001_initial"
     assert callable(module.upgrade) and callable(module.downgrade)
+    spec = importlib.util.spec_from_file_location(
+        "phase2_dedup", BACKEND / "alembic/versions/002_active_job_dedup.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "002_active_job_dedup" and module.down_revision == "001_initial"
 
 
 def test_sqlite_upgrade_constraints_orm_match_and_downgrade(monkeypatch, test_settings) -> None:
@@ -49,7 +56,9 @@ def test_sqlite_upgrade_constraints_orm_match_and_downgrade(monkeypatch, test_se
     db_file = test_settings.database_url.removeprefix("sqlite+aiosqlite:///")
     with sqlite3.connect(db_file) as db:
         db.execute("PRAGMA foreign_keys=ON")
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("001_initial",)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "002_active_job_dedup",
+        )
         db.execute("INSERT INTO products(asin,domain) VALUES ('B000000001','com')")
         row = (
             "1" * 32,
@@ -78,6 +87,50 @@ def test_sqlite_upgrade_constraints_orm_match_and_downgrade(monkeypatch, test_se
     command.upgrade(cfg, "head")
 
 
+def test_existing_phase1_records_survive_phase2_upgrade(monkeypatch, test_settings) -> None:
+    monkeypatch.setattr("app.core.config.get_settings", lambda: test_settings)
+    cfg = config()
+    command.upgrade(cfg, "001_initial")
+    file = test_settings.database_url.removeprefix("sqlite+aiosqlite:///")
+    with sqlite3.connect(file) as db:
+        db.execute("INSERT INTO products(asin,domain) VALUES ('B000000001','com')")
+        db.execute(
+            "INSERT INTO collection_jobs(id,kind,product_id,request_key) VALUES (?,?,?,?)",
+            ("a" * 32, "scrape_product", 1, "legacy-key"),
+        )
+        db.execute(
+            "INSERT INTO product_observations(id,product_id,source_url,captured_at,collector,extraction_method,evidence_id) VALUES (?,?,?,?,?,?,?)",
+            (
+                "b" * 32,
+                1,
+                "https://amazon.com/dp/B000000001",
+                "2026-10-06 06:00:00",
+                "playwright_amazon",
+                "json_ld",
+                "c" * 64,
+            ),
+        )
+    command.upgrade(cfg, "head")
+    command.check(cfg)
+    with sqlite3.connect(file) as db:
+        assert db.execute("SELECT COUNT(*) FROM products").fetchone() == (1,)
+        assert db.execute("SELECT evidence_id FROM product_observations").fetchone() == ("c" * 64,)
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO collection_jobs(id,kind,product_id,request_key,status) VALUES (?,?,?,?,?)",
+                ("d" * 32, "scrape_product", 1, "legacy-key", "running"),
+            )
+        db.execute(
+            "INSERT INTO collection_jobs(id,kind,product_id,request_key,status) VALUES (?,?,?,?,?)",
+            ("e" * 32, "scrape_product", 1, "legacy-key", "succeeded"),
+        )
+    command.downgrade(cfg, "001_initial")
+    with sqlite3.connect(file) as db:
+        assert db.execute("SELECT COUNT(*) FROM product_observations").fetchone() == (1,)
+        assert db.execute("SELECT COUNT(*) FROM collection_jobs").fetchone() == (2,)
+    command.upgrade(cfg, "head")
+
+
 def test_postgresql_offline_upgrade_and_orm_constraint_match(monkeypatch, tmp_path) -> None:
     settings = Settings(
         database_url="postgresql+asyncpg://aci:aci@localhost/aci_test", evidence_dir=tmp_path
@@ -92,6 +145,14 @@ def test_postgresql_offline_upgrade_and_orm_constraint_match(monkeypatch, tmp_pa
     assert expected in ddl
     assert "evidence_id VARCHAR(64) NOT NULL" in ddl
     assert "ck_observation_provenance" in ddl
+    assert "CREATE UNIQUE INDEX idx_jobs_active_dedup" in ddl
+    assert "WHERE status IN ('queued', 'running')" in ddl
+    index = next(
+        index for index in CollectionJob.__table__.indexes if index.name == "idx_jobs_active_dedup"
+    )
+    assert "WHERE status IN ('queued', 'running')" in str(
+        CreateIndex(index).compile(dialect=postgresql.dialect())
+    )
     assert expected in str(
         CreateTable(ProductObservation.__table__).compile(dialect=postgresql.dialect())
     )

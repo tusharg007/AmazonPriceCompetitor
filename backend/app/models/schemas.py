@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-ASIN_REGEX = re.compile(r"^[A-Z0-9]{10}$")
-SUPPORTED_DOMAINS = ("com", "in", "ca", "co.uk", "de", "fr", "it", "ae")
+from app.core.validation import (
+    ASIN_REGEX,
+    SUPPORTED_DOMAINS,
+    amazon_identity,
+    normalize_asin,
+    normalize_domain,
+    normalize_location,
+)
 
 
 class ProvenanceMetadata(BaseModel):
@@ -99,25 +104,50 @@ class ExtractedSearchCandidate(BaseModel):
 class ProductCreate(BaseModel):
     """Payload to register a product for tracking."""
 
-    asin: str
+    asin: str = Field(default="", description="ASIN, or omit when supplying an Amazon product URL")
     domain: str = "com"
     requested_location: str | None = None
+    url: str | None = Field(default=None, max_length=2048)
+
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_default=True,
+        json_schema_extra={"anyOf": [{"required": ["asin"]}, {"required": ["url"]}]},
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_url(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("url") is not None:
+            data = dict(data)
+            if not isinstance(data["url"], str):
+                raise ValueError("URL must be a string")
+            asin, domain = amazon_identity(data["url"])
+            if "asin" in data and (
+                not isinstance(data["asin"], str) or normalize_asin(data["asin"]) != asin
+            ):
+                raise ValueError("ASIN disagrees with URL")
+            if "domain" in data and (
+                not isinstance(data["domain"], str) or normalize_domain(data["domain"]) != domain
+            ):
+                raise ValueError("Domain disagrees with URL")
+            data.update(asin=asin, domain=domain)
+        return data
 
     @field_validator("asin")
     @classmethod
     def validate_asin(cls, v: str) -> str:
-        cleaned = v.strip().upper()
-        if not ASIN_REGEX.match(cleaned):
-            raise ValueError(f"Invalid ASIN '{v}'. Must be 10 alphanumeric characters.")
-        return cleaned
+        return normalize_asin(v)
 
     @field_validator("domain")
     @classmethod
     def validate_domain(cls, v: str) -> str:
-        cleaned = v.strip().lower().removeprefix("amazon.")
-        if cleaned not in SUPPORTED_DOMAINS:
-            raise ValueError(f"Unsupported domain '{v}'.")
-        return cleaned
+        return normalize_domain(v)
+
+    @model_validator(mode="after")
+    def delivery_context(self) -> Self:
+        _, self.requested_location = normalize_location(self.domain, self.requested_location)
+        return self
 
 
 class ProductRead(BaseModel):
@@ -187,8 +217,68 @@ class CollectionJobRead(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    result: dict[str, Any]
+    attempts: int
+    max_attempts: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProductResponse(ProductRead):
+    latest_observation: ProductObservationRead | None
+    competitor_count: int
+    last_collected_at: datetime | None
+
+
+class Page[T](BaseModel):
+    items: list[T]
+    total: int
+    page: int
+    limit: int
+
+
+JobStatus = Literal["queued", "running", "succeeded", "partial", "failed", "cancelled"]
+MatchStatus = Literal["pending", "confirmed", "ambiguous", "rejected"]
+
+
+class CollectRequest(BaseModel):
+    include_competitors: bool = Field(default=False, strict=True)
+    model_config = ConfigDict(extra="forbid")
+
+
+class JobProgress(BaseModel):
+    status: str
+    progress: int
+    error_code: str | None
+    error_message: str | None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CompetitorRead(BaseModel):
+    id: uuid.UUID
+    baseline_product_id: int
+    competitor_product_id: int
+    match_score: float
+    match_method: str
+    match_status: str
+    exclusion_reason: str | None
+    search_rank: int | None
+    sponsored: bool
+    search_query: str | None
+    evidence_summary: dict[str, Any]
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ValidationIssue(BaseModel):
+    loc: list[str | int]
+    msg: str
+    type: str
+
+
+class ErrorResponse(BaseModel):
+    error: str
+    detail: str
+    issues: list[ValidationIssue] | None = None
 
 
 class HealthCheckResponse(BaseModel):

@@ -14,12 +14,14 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -234,6 +236,17 @@ class CollectionJob(Base):
     """Collection job tracking async scraping task execution, lease state, and diagnostics."""
 
     __tablename__ = "collection_jobs"
+    __table_args__ = (
+        Index(
+            "idx_jobs_active_dedup",
+            "kind",
+            "product_id",
+            "request_key",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+            sqlite_where=text("status IN ('queued', 'running')"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),

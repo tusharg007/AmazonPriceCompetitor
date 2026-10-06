@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,10 +42,15 @@ class Settings(BaseSettings):
     page_timeout_seconds: int = Field(default=30, gt=0)
     element_timeout_seconds: int = Field(default=10, gt=0)
     min_navigation_interval_seconds: float = Field(default=2.0, ge=0)
-    max_search_pages: int = 2
-    max_competitors: int = 20
+    max_search_pages: int = Field(default=2, ge=1, le=10)
+    max_competitors: int = Field(default=20, ge=1, le=100)
     challenge_wait_seconds: int = 300
-    block_cooldown_seconds: int = 300
+    block_cooldown_seconds: int = Field(default=300, ge=0)
+
+    # Single standalone collection worker; leases never span browser-held DB transactions.
+    worker_poll_interval: float = Field(default=1.0, gt=0)
+    worker_lease_seconds: int = Field(default=90, ge=3)
+    worker_heartbeat_seconds: float = Field(default=15.0, gt=0)
 
     # CORS — comma-separated list of allowed origins; default is localhost dev origins only.
     # Never use "*" together with allow_credentials.
@@ -68,6 +73,12 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
+
+    @model_validator(mode="after")
+    def worker_intervals(self) -> Self:
+        if self.worker_heartbeat_seconds >= self.worker_lease_seconds:
+            raise ValueError("Worker heartbeat interval must be shorter than its lease")
+        return self
 
     @property
     def allowed_origins(self) -> list[str]:
