@@ -6,7 +6,8 @@ failure investigation verified a real Groq analysis; see
 [the follow-up report](V2_COLLECTION_FAILURE_FIX.md) for current test results and
 the live collection/analysis identifiers. The Phase 8 verification below is retained
 as its original checkpoint record.
-Commits are local only. No cloud deployment or remote CI success is claimed.
+This report records local verification. Publishing the repository does not establish
+cloud deployment or remote CI success; neither is claimed here.
 
 ## Completed phases and checkpoints
 
@@ -136,7 +137,8 @@ the saved confirmed cohort, not the whole market or a simultaneous price survey.
 | Repository hygiene | diff --check passed; tracked secret paths/key patterns reviewed; runtime data ignored |
 
 CI supplies PostgreSQL and Chromium, applies the coverage gate, checks both languages
-and builds Compose images. CI has not been remotely run in this task: no push occurred.
+and builds Compose images. At the Phase 8 verification checkpoint, no push or remote
+CI run had occurred; the table above records local results.
 The exact phase file changes and test descriptions are in the individual reports.
 
 ## Real collection and browser validation
@@ -164,7 +166,9 @@ listing with **15544.0000 INR**, default delivery context.
   attachment hash passed. The built Docker frontend also renders its genuine capture.
 
 These are local run identifiers, not seeded fixtures shipped with the application.
-Database files, HTML and screenshots remain ignored and are not committed.
+Database files, HTML and engineering-verification screenshots remain ignored.
+The intentionally public presentation screenshots in `docs/assets/screenshots/`
+are tracked separately; they do not include the live database or captured HTML.
 
 ## Readiness findings and known limitations
 
