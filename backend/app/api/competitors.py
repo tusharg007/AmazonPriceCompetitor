@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
 from app.api.products import Catalog, Jobs, ProductID
 from app.models.schemas import CollectionJobRead, CompetitorRead, MatchStatus
@@ -14,10 +14,17 @@ router = APIRouter(prefix="/products", tags=["competitors"])
 async def competitors(
     product_id: ProductID,
     service: Catalog,
+    response: Response,
     status: MatchStatus | None = None,
     min_score: Annotated[float, Query(ge=0, le=1)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[CompetitorRead]:
-    return await service.competitors(product_id, status, min_score)
+    rows = await service.competitors(product_id, status, min_score, limit, offset)
+    response.headers["X-Total-Count"] = str(
+        await service.competitor_total(product_id, status, min_score)
+    )
+    return rows
 
 
 @router.post(

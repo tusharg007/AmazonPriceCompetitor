@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from app.api import analysis, competitors, evidence, jobs, observations, products
+from app.api import analysis, analytics, competitors, evidence, jobs, observations, products
 from app.api.deps import get_settings_dep
 from app.api.health import router as health_router
 from app.core.config import Settings, get_settings
@@ -125,6 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=False,  # Set True only if using cookies / HTTP auth
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Total-Count"],
     )
 
     # Global exception handler for unhandled ValueErrors
@@ -148,6 +149,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         evidence.router,
         jobs.router,
         analysis.router,
+        analytics.router,
     ):
         app.include_router(router, prefix=cfg.api_prefix, responses=errors)
     app.include_router(jobs.socket_router)

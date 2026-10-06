@@ -238,6 +238,7 @@ class ProductResponse(ProductRead):
     latest_observation: ProductObservationRead | None
     competitor_count: int
     last_collected_at: datetime | None
+    price_trend: Literal["rising", "falling", "stable", "insufficient_data"] = "insufficient_data"
 
 
 class Page[T](BaseModel):
@@ -340,3 +341,55 @@ class AnalysisResponse(APIResponse):
     claims: list[AnalysisClaimResponse] = Field(default_factory=list)
     withheld_quantitative_claims: int = 0
     model_config = ConfigDict(from_attributes=True)
+
+
+class DailyPrice(BaseModel):
+    day: str
+    average: Decimal | None
+    count: int
+    observation_ids: list[uuid.UUID]
+
+
+class PriceAnalytics(APIResponse):
+    product_id: int
+    currency: str | None
+    window_days: int
+    as_of: datetime
+    observation_count: int
+    priced_count: int
+    minimum: Decimal | None
+    maximum: Decimal | None
+    average: Decimal | None
+    current: Decimal | None
+    previous: Decimal | None
+    change: Decimal | None
+    change_percent: Decimal | None
+    recent_average: Decimal | None
+    prior_average: Decimal | None
+    trend_change_percent: Decimal | None
+    trend: Literal["rising", "falling", "stable", "insufficient_data"]
+    daily: list[DailyPrice]
+
+
+class PositionEntry(APIResponse):
+    product_id: int
+    asin: str
+    title: str | None
+    baseline: bool
+    price_amount: Decimal
+    currency: str
+    captured_at: datetime
+    observation_id: uuid.UUID
+    evidence_artifact_id: uuid.UUID | None
+
+
+class CompetitivePosition(BaseModel):
+    product_id: int
+    currency: str | None
+    price_rank: int | None
+    price_percentile: Decimal | None
+    total_in_set: int
+    median: Decimal | None
+    excluded_count: int
+    reason: str | None
+    entries: list[PositionEntry]

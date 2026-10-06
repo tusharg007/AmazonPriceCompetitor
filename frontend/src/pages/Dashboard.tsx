@@ -145,6 +145,13 @@ export function Dashboard() {
                       )}
                     </p>
                     <p>{p.brand || "Brand not captured"}</p>
+                    <span className="badge">
+                      Price trend:{" "}
+                      {(p.price_trend || "insufficient_data").replaceAll(
+                        "_",
+                        " ",
+                      )}
+                    </span>
                     <p className="muted">
                       {p.requested_location || "Default delivery context"} ·{" "}
                       {p.competitor_count} candidates

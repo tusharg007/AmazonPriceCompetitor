@@ -1,6 +1,22 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+.stat-grid strong {
+  display: block;
+  font-size: 22px;
+}
+.citation {
+  margin: 18px 0;
+  padding: 14px;
+  background: #edf4ef;
+  border-radius: 8px;
+}
 :root {
   font-family: Inter, system-ui, sans-serif;
   color: #18363a;

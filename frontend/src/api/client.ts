@@ -13,6 +13,7 @@ export class ApiError extends Error {
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
+  onHeaders?: (headers: Headers) => void,
 ): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set("Content-Type", "application/json");
@@ -28,6 +29,7 @@ export async function apiFetch<T>(
       error.error || "request_failed",
     );
   }
+  onHeaders?.(response.headers);
   return response.status === 204 ? (undefined as T) : response.json();
 }
 

@@ -80,6 +80,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/products/{product_id}/observations/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export
+         * @description CSV with exact captured values and provenance; maximum 10,000 captures per date range.
+         */
+        get: operations["export_api_products__product_id__observations_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/products/{product_id}/observations": {
         parameters: {
             query?: never;
@@ -253,6 +273,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/products/{product_id}/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Prices */
+        get: operations["prices_api_products__product_id__analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/products/{product_id}/position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Position */
+        get: operations["position_api_products__product_id__position_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -392,6 +446,27 @@ export interface components {
             /** Max Attempts */
             max_attempts: number;
         };
+        /** CompetitivePosition */
+        CompetitivePosition: {
+            /** Product Id */
+            product_id: number;
+            /** Currency */
+            currency: string | null;
+            /** Price Rank */
+            price_rank: number | null;
+            /** Price Percentile */
+            price_percentile: string | null;
+            /** Total In Set */
+            total_in_set: number;
+            /** Median */
+            median: string | null;
+            /** Excluded Count */
+            excluded_count: number;
+            /** Reason */
+            reason: string | null;
+            /** Entries */
+            entries: components["schemas"]["PositionEntry"][];
+        };
         /** CompetitorRead */
         CompetitorRead: {
             /**
@@ -422,6 +497,17 @@ export interface components {
                 [key: string]: unknown;
             };
             competitor?: components["schemas"]["ProductResponse"] | null;
+        };
+        /** DailyPrice */
+        DailyPrice: {
+            /** Day */
+            day: string;
+            /** Average */
+            average: string | null;
+            /** Count */
+            count: number;
+            /** Observation Ids */
+            observation_ids: string[];
         };
         /** ErrorResponse */
         ErrorResponse: {
@@ -506,6 +592,78 @@ export interface components {
             page: number;
             /** Limit */
             limit: number;
+        };
+        /** PositionEntry */
+        PositionEntry: {
+            /** Product Id */
+            product_id: number;
+            /** Asin */
+            asin: string;
+            /** Title */
+            title: string | null;
+            /** Baseline */
+            baseline: boolean;
+            /** Price Amount */
+            price_amount: string;
+            /** Currency */
+            currency: string;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /**
+             * Observation Id
+             * Format: uuid
+             */
+            observation_id: string;
+            /** Evidence Artifact Id */
+            evidence_artifact_id: string | null;
+        };
+        /** PriceAnalytics */
+        PriceAnalytics: {
+            /** Product Id */
+            product_id: number;
+            /** Currency */
+            currency: string | null;
+            /** Window Days */
+            window_days: number;
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Observation Count */
+            observation_count: number;
+            /** Priced Count */
+            priced_count: number;
+            /** Minimum */
+            minimum: string | null;
+            /** Maximum */
+            maximum: string | null;
+            /** Average */
+            average: string | null;
+            /** Current */
+            current: string | null;
+            /** Previous */
+            previous: string | null;
+            /** Change */
+            change: string | null;
+            /** Change Percent */
+            change_percent: string | null;
+            /** Recent Average */
+            recent_average: string | null;
+            /** Prior Average */
+            prior_average: string | null;
+            /** Trend Change Percent */
+            trend_change_percent: string | null;
+            /**
+             * Trend
+             * @enum {string}
+             */
+            trend: "rising" | "falling" | "stable" | "insufficient_data";
+            /** Daily */
+            daily: components["schemas"]["DailyPrice"][];
         };
         /**
          * ProductCreate
@@ -608,6 +766,12 @@ export interface components {
             competitor_count: number;
             /** Last Collected At */
             last_collected_at: string | null;
+            /**
+             * Price Trend
+             * @default insufficient_data
+             * @enum {string}
+             */
+            price_trend: "rising" | "falling" | "stable" | "insufficient_data";
         };
         /** ValidationIssue */
         ValidationIssue: {
@@ -997,12 +1161,81 @@ export interface operations {
             };
         };
     };
+    export_api_products__product_id__observations_export_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                product_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     history_api_products__product_id__observations_get: {
         parameters: {
             query?: {
                 from?: string | null;
                 to?: string | null;
                 limit?: number;
+                offset?: number;
             };
             header?: never;
             path: {
@@ -1073,6 +1306,8 @@ export interface operations {
             query?: {
                 status?: ("pending" | "confirmed" | "ambiguous" | "rejected") | null;
                 min_score?: number;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path: {
@@ -1629,6 +1864,143 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalysisClaimResponse"][];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    prices_api_products__product_id__analytics_get: {
+        parameters: {
+            query?: {
+                window_days?: number;
+                currency?: string | null;
+            };
+            header?: never;
+            path: {
+                product_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceAnalytics"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    position_api_products__product_id__position_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitivePosition"];
                 };
             };
             /** @description Not Found */

@@ -9,7 +9,13 @@ import {
   useAnalyze,
 } from "../api/queries";
 import { amount, timestamp } from "../format";
-import { Empty, ErrorNotice, Loading } from "../components/Feedback";
+import {
+  Empty,
+  ErrorNotice,
+  Loading,
+  Pagination,
+} from "../components/Feedback";
+import { AnalyticsPanel } from "../components/AnalyticsPanel";
 import { PriceHistoryChart } from "../components/PriceHistoryChart";
 import { JobProgress } from "../components/JobProgress";
 import { EvidenceInspector } from "../components/EvidenceInspector";
@@ -19,13 +25,14 @@ export function ProductDetail() {
   const navigate = useNavigate();
   const [days, setDays] = useState(30);
   const [status, setStatus] = useState("");
+  const [matchPage, setMatchPage] = useState(1);
   const [include, setInclude] = useState(false);
   const [evidence, setEvidence] = useState<string | null>(null);
   const [currency, setCurrency] = useState("");
   const [job, setJob] = useState<string | null>(null);
   const product = useProduct(id);
   const history = useHistory(id, days);
-  const matches = useMatches(id, status);
+  const matches = useMatches(id, status, matchPage);
   const collect = useCollect(id);
   const untrack = useUntrack(id);
   const analyze = useAnalyze(id);
@@ -43,7 +50,7 @@ export function ProductDetail() {
   ];
   const selected = currencies.includes(currency)
     ? currency
-    : currencies[0] || "";
+    : p.latest_observation?.currency || currencies[0] || "";
   return (
     <>
       <Link to="/">← Products</Link>
@@ -213,7 +220,13 @@ export function ProductDetail() {
           <h2>Competitor candidates</h2>
           <label>
             Match status
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <select
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setMatchPage(1);
+              }}
+            >
               <option value="">All statuses</option>
               {["confirmed", "ambiguous", "rejected"].map((s) => (
                 <option key={s}>{s}</option>
@@ -229,7 +242,7 @@ export function ProductDetail() {
           <Loading />
         ) : matches.error ? (
           <ErrorNotice error={matches.error} />
-        ) : matches.data.length === 0 ? (
+        ) : matches.data.items.length === 0 ? (
           <Empty title="No candidates in this selection">
             Run a collection with competitor discovery enabled.
           </Empty>
@@ -247,7 +260,7 @@ export function ProductDetail() {
                 </tr>
               </thead>
               <tbody>
-                {matches.data.map((m) => (
+                {matches.data.items.map((m) => (
                   <tr key={m.id}>
                     <td>
                       <Link to={`/products/${m.competitor_product_id}`}>
@@ -295,7 +308,16 @@ export function ProductDetail() {
             </table>
           </div>
         )}
+        {matches.data && (
+          <Pagination
+            page={matchPage}
+            total={matches.data.total}
+            limit={20}
+            onChange={setMatchPage}
+          />
+        )}
       </section>
+      <AnalyticsPanel id={id} days={days} currency={selected} />
       {evidence && (
         <EvidenceInspector id={evidence} onClose={() => setEvidence(null)} />
       )}

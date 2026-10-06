@@ -347,6 +347,9 @@ async def test_missing_resources(async_client, method, path):
         ("post", "/api/products/1/analyze", None),
         ("get", "/api/analyses/00000000-0000-0000-0000-000000000001", None),
         ("get", "/api/analyses/00000000-0000-0000-0000-000000000001/claims", None),
+        ("get", "/api/products/1/analytics", None),
+        ("get", "/api/products/1/position", None),
+        ("get", "/api/products/1/observations/export", None),
     ],
 )
 async def test_database_failures_sanitized(async_client, monkeypatch, method, path, payload):
@@ -384,7 +387,8 @@ async def test_swagger_documents_completed_capabilities(async_client):
     assert "/api/evidence/{evidence_id}/content" in paths
     assert "/api/products/{product_id}/analyze" in paths
     assert "/api/analyses/{run_id}" in paths
-    assert not any(token in path for path in paths for token in ("analytics", "position"))
+    assert "/api/products/{product_id}/analytics" in paths
+    assert "/api/products/{product_id}/position" in paths
 
 
 @pytest.mark.asyncio

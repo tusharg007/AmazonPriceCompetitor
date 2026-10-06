@@ -80,21 +80,20 @@ async def untrack(session: AsyncSession, product_id: int) -> None:
 
 
 async def latest_observations(
-    session: AsyncSession, ids: list[int]
+    session: AsyncSession, ids: list[int], as_of: datetime | None = None
 ) -> dict[int, ProductObservation]:
-    ranked = (
-        select(
-            ProductObservation.id,
-            func.row_number()
-            .over(
-                partition_by=ProductObservation.product_id,
-                order_by=(ProductObservation.captured_at.desc(), ProductObservation.id.desc()),
-            )
-            .label("rank"),
+    query = select(
+        ProductObservation.id,
+        func.row_number()
+        .over(
+            partition_by=ProductObservation.product_id,
+            order_by=(ProductObservation.captured_at.desc(), ProductObservation.id.desc()),
         )
-        .where(ProductObservation.product_id.in_(ids))
-        .subquery()
-    )
+        .label("rank"),
+    ).where(ProductObservation.product_id.in_(ids))
+    if as_of is not None:
+        query = query.where(ProductObservation.captured_at <= as_of)
+    ranked = query.subquery()
     rows = await session.scalars(
         select(ProductObservation)
         .join(ranked, ranked.c.id == ProductObservation.id)
@@ -116,7 +115,12 @@ async def competitor_counts(session: AsyncSession, ids: list[int]) -> dict[int, 
 
 
 async def observations(
-    session: AsyncSession, product_id: int, start: datetime | None, end: datetime | None, limit: int
+    session: AsyncSession,
+    product_id: int,
+    start: datetime | None,
+    end: datetime | None,
+    limit: int,
+    offset: int = 0,
 ) -> list[ProductObservation]:
     query = select(ProductObservation).where(ProductObservation.product_id == product_id)
     if start is not None:
@@ -125,13 +129,20 @@ async def observations(
         query = query.where(ProductObservation.captured_at <= end)
     return list(
         await session.scalars(
-            query.order_by(ProductObservation.captured_at, ProductObservation.id).limit(limit)
+            query.order_by(ProductObservation.captured_at, ProductObservation.id)
+            .offset(offset)
+            .limit(limit)
         )
     )
 
 
 async def competitors(
-    session: AsyncSession, product_id: int, status: str | None, min_score: float
+    session: AsyncSession,
+    product_id: int,
+    status: str | None,
+    min_score: float,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[CompetitorRelationship]:
     query = select(CompetitorRelationship).where(
         CompetitorRelationship.baseline_product_id == product_id,
@@ -139,11 +150,24 @@ async def competitors(
     )
     if status is not None:
         query = query.where(CompetitorRelationship.match_status == status)
-    return list(
-        await session.scalars(
-            query.order_by(CompetitorRelationship.match_score.desc(), CompetitorRelationship.id)
-        )
+    query = query.order_by(
+        CompetitorRelationship.match_score.desc(), CompetitorRelationship.id
+    ).offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    return list(await session.scalars(query))
+
+
+async def competitor_total(
+    session: AsyncSession, product_id: int, status: str | None, min_score: float
+) -> int:
+    query = select(func.count(CompetitorRelationship.id)).where(
+        CompetitorRelationship.baseline_product_id == product_id,
+        CompetitorRelationship.match_score >= min_score,
     )
+    if status is not None:
+        query = query.where(CompetitorRelationship.match_status == status)
+    return (await session.scalar(query)) or 0
 
 
 async def evidence(session: AsyncSession, evidence_id: UUID) -> EvidenceArtifact | None:

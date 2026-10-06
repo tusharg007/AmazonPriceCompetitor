@@ -1,10 +1,11 @@
 """Product tracking, historical reads and verified evidence retrieval."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analytics.prices import price_trend
 from app.core.config import Settings
 from app.core.exceptions import InputError, NotFoundError
 from app.core.validation import normalize_location
@@ -18,7 +19,7 @@ from app.models.schemas import (
     ProductRead,
     ProductResponse,
 )
-from app.repository import catalog
+from app.repository import analytics, catalog
 from app.services.evidence import read_verified_evidence
 
 
@@ -37,6 +38,8 @@ class CatalogService:
         ids = [p.id for p in products]
         latest = await catalog.latest_observations(self.session, ids)
         counts = await catalog.competitor_counts(self.session, ids)
+        now = datetime.now(UTC)
+        recent = await analytics.window(self.session, ids, now - timedelta(days=14), now)
         return [
             ProductResponse(
                 **ProductRead.model_validate(p).model_dump(),
@@ -45,6 +48,9 @@ class CatalogService:
                 else None,
                 competitor_count=counts.get(p.id, 0),
                 last_collected_at=latest[p.id].captured_at if p.id in latest else None,
+                price_trend=price_trend(
+                    recent.get(p.id, []), latest[p.id].currency if p.id in latest else None, now
+                )[0],
             )
             for p in products
         ]
@@ -74,7 +80,12 @@ class CatalogService:
         await self.session.commit()
 
     async def history(
-        self, product_id: int, start: datetime | None, end: datetime | None, limit: int
+        self,
+        product_id: int,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+        offset: int = 0,
     ) -> list[ProductObservationRead]:
         # Require explicit offsets to avoid comparing naive and aware timestamps.
         for value in (start, end):
@@ -87,14 +98,21 @@ class CatalogService:
         await self.require_product(product_id)
         return [
             ProductObservationRead.model_validate(row)
-            for row in await catalog.observations(self.session, product_id, start, end, limit)
+            for row in await catalog.observations(
+                self.session, product_id, start, end, limit, offset
+            )
         ]
 
     async def competitors(
-        self, product_id: int, status: str | None, min_score: float
+        self,
+        product_id: int,
+        status: str | None,
+        min_score: float,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[CompetitorRead]:
         await self.require_product(product_id)
-        rows = await catalog.competitors(self.session, product_id, status, min_score)
+        rows = await catalog.competitors(self.session, product_id, status, min_score, limit, offset)
         details = {
             p.id: p
             for p in await self.responses(
@@ -109,6 +127,9 @@ class CatalogService:
             )
             for row in rows
         ]
+
+    async def competitor_total(self, product_id: int, status: str | None, min_score: float) -> int:
+        return await catalog.competitor_total(self.session, product_id, status, min_score)
 
     async def evidence(self, evidence_id: UUID) -> EvidenceArtifactRead:
         row = await catalog.evidence(self.session, evidence_id)

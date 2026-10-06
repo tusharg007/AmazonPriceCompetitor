@@ -33,13 +33,37 @@ export const useHistory = (id: number, days: number) =>
       ),
     enabled: id > 0,
   });
-export const useMatches = (id: number, status = "") =>
+export const useMatches = (id: number, status = "", page = 1) =>
   useQuery({
-    queryKey: ["competitors", id, status],
+    queryKey: ["competitors", id, status, page],
+    queryFn: async () => {
+      let total = 0;
+      const items = await apiFetch<Match[]>(
+        `/api/products/${id}/competitors?limit=20&offset=${(page - 1) * 20}${status ? `&status=${status}` : ""}`,
+        undefined,
+        (headers) => {
+          total = Number(headers.get("X-Total-Count") || 0);
+        },
+      );
+      return { items, total, page, limit: 20 };
+    },
+    enabled: id > 0,
+  });
+
+export const useAnalytics = (id: number, days: number, currency: string) =>
+  useQuery({
+    queryKey: ["analytics", id, days, currency],
     queryFn: () =>
-      apiFetch<Match[]>(
-        `/api/products/${id}/competitors${status ? `?status=${status}` : ""}`,
+      apiFetch<import("./types").Analytics>(
+        `/api/products/${id}/analytics?window_days=${days}${currency ? `&currency=${currency}` : ""}`,
       ),
+    enabled: id > 0,
+  });
+export const usePosition = (id: number) =>
+  useQuery({
+    queryKey: ["position", id],
+    queryFn: () =>
+      apiFetch<import("./types").Position>(`/api/products/${id}/position`),
     enabled: id > 0,
   });
 export const useJobs = (page = 1, status = "") =>
