@@ -23,6 +23,11 @@ export const useProduct = (id: number) =>
     queryKey: ["product", id],
     queryFn: () => apiFetch<Product>(`/api/products/${id}`),
     enabled: Number.isInteger(id) && id > 0,
+    refetchInterval: (query) =>
+      active(query.state.data?.latest_collection_job?.status) ||
+      (query.state.data?.collection_retry_after_seconds || 0) > 0
+        ? 5000
+        : false,
   });
 export const useHistory = (id: number, days: number) =>
   useQuery({
@@ -97,12 +102,14 @@ export function useRegister() {
 }
 
 export function useCollect(id: number) {
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (include: boolean) =>
       apiFetch<Job>(`/api/products/${id}/collect`, {
         method: "POST",
         body: JSON.stringify({ include_competitors: include }),
       }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["product", id] }),
   });
 }
 

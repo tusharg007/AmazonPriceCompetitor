@@ -239,6 +239,8 @@ class ProductResponse(ProductRead):
     competitor_count: int
     last_collected_at: datetime | None
     price_trend: Literal["rising", "falling", "stable", "insufficient_data"] = "insufficient_data"
+    latest_collection_job: CollectionJobRead | None = None
+    collection_retry_after_seconds: int = Field(default=0, ge=0)
 
 
 class Page[T](BaseModel):

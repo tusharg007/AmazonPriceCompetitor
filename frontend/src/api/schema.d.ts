@@ -772,6 +772,12 @@ export interface components {
              * @enum {string}
              */
             price_trend: "rising" | "falling" | "stable" | "insufficient_data";
+            latest_collection_job?: components["schemas"]["CollectionJobRead"] | null;
+            /**
+             * Collection Retry After Seconds
+             * @default 0
+             */
+            collection_retry_after_seconds: number;
         };
         /** ValidationIssue */
         ValidationIssue: {

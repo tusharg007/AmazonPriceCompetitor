@@ -22,7 +22,7 @@ export function JobProgress({ id }: { id: string }) {
   if (query.error) return <ErrorNotice error={query.error} />;
   if (!progress) return null;
   return (
-    <div className="job-progress" aria-live="polite">
+    <div className={`job-progress ${progress.status}`} aria-live="polite">
       <div className="section-line">
         <strong>Job {progress.status}</strong>
         <Link to="/jobs">View jobs</Link>

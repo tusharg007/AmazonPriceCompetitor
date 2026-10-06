@@ -3473,6 +3473,22 @@
             ],
             "title": "Price Trend",
             "default": "insufficient_data"
+          },
+          "latest_collection_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionJobRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "collection_retry_after_seconds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Collection Retry After Seconds",
+            "default": 0
           }
         },
         "type": "object",

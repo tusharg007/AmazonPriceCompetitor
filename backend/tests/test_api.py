@@ -441,3 +441,61 @@ async def test_evidence_read_os_error(async_client, db_session, monkeypatch):
     monkeypatch.setattr(Path, "open", unreadable)
     response = await async_client.get(f"/api/evidence/{artifact.id}/content")
     assert response.status_code == 503 and "secret" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_product_detail_retains_latest_collection_failure_and_marketplace_cooldown(
+    async_client, db_session
+):
+    product = await register(async_client)
+    now = datetime.now(UTC)
+    blocked = CollectionJob(
+        product_id=product["id"],
+        kind="scrape_product",
+        status="failed",
+        request_key="test-blocked",
+        progress=100,
+        error_code="blocked",
+        error_message="Amazon bot challenge / CAPTCHA detected.",
+        created_at=now - timedelta(seconds=10),
+        finished_at=now,
+    )
+    db_session.add(blocked)
+    # A later analysis must not hide collection failure on reload.
+    db_session.add(
+        CollectionJob(
+            product_id=product["id"],
+            kind="analyze",
+            status="failed",
+            request_key="test-analysis",
+            created_at=now + timedelta(seconds=1),
+        )
+    )
+    await db_session.commit()
+    detail = (await async_client.get(f"/api/products/{product['id']}")).json()
+    assert detail["latest_collection_job"]["id"] == str(blocked.id)
+    assert detail["latest_collection_job"]["error_code"] == "blocked"
+    assert 0 < detail["collection_retry_after_seconds"] <= 300
+    assert detail["latest_observation"] is None and detail["competitor_count"] == 0
+    retry = await async_client.post(f"/api/products/{product['id']}/collect")
+    assert retry.status_code == 429 and retry.json()["error"] == "cooldown"
+
+    # A product in the same marketplace is also paused, even without its own job.
+    sibling = await register(async_client, asin="B000000002")
+    sibling_detail = (await async_client.get(f"/api/products/{sibling['id']}")).json()
+    assert sibling_detail["latest_collection_job"] is None
+    assert sibling_detail["collection_retry_after_seconds"] > 0
+    other = await register(async_client, domain="in")
+    other_detail = (await async_client.get(f"/api/products/{other['id']}")).json()
+    assert other_detail["collection_retry_after_seconds"] == 0
+
+    blocked.finished_at = now - timedelta(minutes=10)
+    await db_session.commit()
+    expired = (await async_client.get(f"/api/products/{product['id']}")).json()
+    assert expired["collection_retry_after_seconds"] == 0
+    assert expired["latest_collection_job"]["error_code"] == "blocked"
+    queued = await async_client.post(f"/api/products/{product['id']}/collect")
+    assert queued.status_code == 202
+    assert (await async_client.get(f"/api/products/{product['id']}")).json()[
+        "latest_collection_job"
+    ]["id"] == queued.json()["id"]

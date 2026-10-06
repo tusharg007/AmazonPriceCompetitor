@@ -21,6 +21,18 @@ async def get_job(session: AsyncSession, job_id: UUID) -> CollectionJob | None:
     return await session.get(CollectionJob, job_id)
 
 
+async def latest_collection(session: AsyncSession, product_id: int) -> CollectionJob | None:
+    return await session.scalar(
+        select(CollectionJob)
+        .where(
+            CollectionJob.product_id == product_id,
+            CollectionJob.kind.in_(("scrape_product", "discover_competitors")),
+        )
+        .order_by(CollectionJob.created_at.desc(), CollectionJob.id.desc())
+        .limit(1)
+    )
+
+
 async def list_jobs(
     session: AsyncSession, status: str | None, page: int, limit: int
 ) -> tuple[list[CollectionJob], int]:

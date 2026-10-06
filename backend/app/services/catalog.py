@@ -1,5 +1,6 @@
 """Product tracking, historical reads and verified evidence retrieval."""
 
+import math
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from app.core.exceptions import InputError, NotFoundError
 from app.core.validation import normalize_location
 from app.models.entities import Product
 from app.models.schemas import (
+    CollectionJobRead,
     CompetitorRead,
     EvidenceArtifactRead,
     Page,
@@ -19,7 +21,7 @@ from app.models.schemas import (
     ProductRead,
     ProductResponse,
 )
-from app.repository import analytics, catalog
+from app.repository import analytics, catalog, jobs
 from app.services.evidence import read_verified_evidence
 
 
@@ -72,7 +74,26 @@ class CatalogService:
         return Page(items=await self.responses(rows), total=total, page=page, limit=limit)
 
     async def detail(self, product_id: int) -> ProductResponse:
-        return (await self.responses([await self.require_product(product_id)]))[0]
+        product = await self.require_product(product_id)
+        response = (await self.responses([product]))[0]
+        latest = await jobs.latest_collection(self.session, product_id)
+        response.latest_collection_job = (
+            CollectionJobRead.model_validate(latest) if latest else None
+        )
+        blocked = await jobs.last_blocked_at(self.session, product.domain)
+        if blocked is not None:
+            blocked = blocked.replace(tzinfo=UTC) if blocked.tzinfo is None else blocked
+            response.collection_retry_after_seconds = max(
+                0,
+                math.ceil(
+                    (
+                        blocked
+                        + timedelta(seconds=self.settings.block_cooldown_seconds)
+                        - datetime.now(UTC)
+                    ).total_seconds()
+                ),
+            )
+        return response
 
     async def stop_tracking(self, product_id: int) -> None:
         await self.require_product(product_id)

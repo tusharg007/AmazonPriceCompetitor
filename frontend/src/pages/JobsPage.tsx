@@ -99,8 +99,12 @@ export function JobsPage() {
                           </span>
                         </td>
                         <td>
-                          <progress max={100} value={j.progress} />
-                          <small>{j.progress}%</small>
+                          <progress
+                            className={j.status}
+                            max={100}
+                            value={j.progress}
+                          />
+                          <small>{j.progress}% processed</small>
                         </td>
                         <td>
                           {j.attempts}/{j.max_attempts}

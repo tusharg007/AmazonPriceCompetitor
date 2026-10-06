@@ -41,6 +41,13 @@ export function ProductDetail() {
   if (product.isPending) return <Loading />;
   if (product.error) return <ErrorNotice error={product.error} />;
   const p = product.data;
+  const latestJob = p.latest_collection_job;
+  const currentJob = job || latestJob?.id;
+  const collectionActive =
+    latestJob?.status === "queued" || latestJob?.status === "running";
+  const retryAfter = p.collection_retry_after_seconds || 0;
+  const failedCollection =
+    latestJob?.status === "failed" || latestJob?.status === "partial";
   const currencies = [
     ...new Set(
       (history.data || [])
@@ -64,10 +71,12 @@ export function ProductDetail() {
           {p.requested_location || "default context"}
         </p>
         <p className="price">
-          {amount(
-            p.latest_observation?.price_amount,
-            p.latest_observation?.currency,
-          )}
+          {p.latest_observation
+            ? amount(
+                p.latest_observation?.price_amount,
+                p.latest_observation?.currency,
+              )
+            : "No product data collected"}
         </p>
         <p className="muted">
           {p.latest_observation?.availability || "Availability not captured"} ·
@@ -76,6 +85,45 @@ export function ProductDetail() {
         </p>
       </div>
       <section className="panel">
+        {failedCollection && (
+          <div role="alert" className="collection-failure">
+            <h2>
+              {latestJob.error_code === "blocked"
+                ? "Collection blocked by Amazon"
+                : "Collection did not finish successfully"}
+            </h2>
+            <p>{latestJob.error_message || "The collection job failed."}</p>
+            <p>
+              {p.latest_observation
+                ? "Saved observations remain available. This attempt did not complete all requested work."
+                : "No product data was captured. Price history, competitors and AI analysis need a successful collection."}
+            </p>
+            {latestJob.error_code === "blocked" && (
+              <p>
+                Amazon returned a CAPTCHA, sign-in page or access restriction to
+                the worker browser. Groq cannot collect the missing data.
+                Repeated retries will not resolve the challenge automatically.
+              </p>
+            )}
+            <a
+              href={`https://www.amazon.${p.domain}/dp/${p.asin}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Check listing on amazon.{p.domain}
+            </a>
+            <p className="muted">
+              Use the marketplace where this product is sold. Your regular
+              browser has a separate session from the collection worker.
+            </p>
+          </div>
+        )}
+        {retryAfter > 0 && (
+          <p role="status">
+            Marketplace cooldown: retry in about {Math.ceil(retryAfter / 60)}{" "}
+            minute(s). Saved data remains available.
+          </p>
+        )}
         <div className="actions">
           <label className="checkbox">
             <input
@@ -86,12 +134,16 @@ export function ProductDetail() {
             Discover competitors in this collection
           </label>
           <button
-            disabled={collect.isPending}
+            disabled={collect.isPending || collectionActive || retryAfter > 0}
             onClick={() =>
               collect.mutate(include, { onSuccess: (j) => setJob(j.id) })
             }
           >
-            Collect evidence
+            {collectionActive
+              ? "Collection in progress"
+              : retryAfter > 0
+                ? "Collection paused"
+                : "Collect evidence"}
           </button>
           <button
             disabled={
@@ -116,7 +168,13 @@ export function ProductDetail() {
         {collect.error && <ErrorNotice error={collect.error} />}{" "}
         {analyze.error && <ErrorNotice error={analyze.error} />}
         {untrack.error && <ErrorNotice error={untrack.error} />}{" "}
-        {job && <JobProgress id={job} />}
+        {!p.latest_observation && (
+          <p className="muted">
+            Analysis is unavailable until a product capture and confirmed
+            competitor evidence are saved.
+          </p>
+        )}
+        {currentJob && <JobProgress id={currentJob} />}
       </section>
       <section className="panel">
         <div className="section-line">

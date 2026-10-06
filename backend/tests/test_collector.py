@@ -42,6 +42,24 @@ async def test_page_not_found_detection(test_settings) -> None:
 
 
 @pytest.mark.asyncio
+async def test_sign_in_classification_and_hidden_challenge_are_not_false_captchas(test_settings):
+    collector = AmazonCollector(test_settings)
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        try:
+            page = await browser.new_page()
+            await page.set_content("<section id='authportal-main-section'>Sign in</section>")
+            with pytest.raises(ScrapingBlockedError, match="requires sign-in"):
+                await collector.check_page_state(page)
+            await page.set_content(
+                "<input id='captchacharacters' style='display:none'><div id='productTitle'>Listing</div>"
+            )
+            await collector.check_page_state(page)
+        finally:
+            await browser.close()
+
+
+@pytest.mark.asyncio
 async def test_collector_session_lifecycle(test_settings) -> None:
     # C-2 fix: Collector must be used as async context manager to initialise browser
     async with AmazonCollector(test_settings) as collector, collector.session("com") as page:

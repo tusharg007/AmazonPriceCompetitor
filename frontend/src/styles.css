@@ -1,4 +1,14 @@
 @import "tailwindcss";
+.collection-failure {
+  border-left: 4px solid #b33b2b;
+  padding: 12px 18px;
+  margin-bottom: 18px;
+  background: #fff4ee;
+}
+.job-progress.failed progress,
+progress.failed {
+  accent-color: #b33b2b;
+}
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

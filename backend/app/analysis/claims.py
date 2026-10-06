@@ -7,7 +7,7 @@ from typing import Any
 from app.analysis.errors import AnalysisError
 from app.analysis.ported import LLMAnalysis, _bounded_analysis
 
-PROMPT_VERSION = "v1-v2-numeric-boundary"
+PROMPT_VERSION = "v1-v2-numeric-boundary-compact"
 SCHEMA_VERSION = "v2-claims-1"
 
 

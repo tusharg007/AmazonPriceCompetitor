@@ -116,6 +116,12 @@ budget. It is not a distributed public-service quota system.
 2. **Collect:** open the product and request a collection. The API returns a job
    ID immediately. Watch Jobs or the product's job progress. A successful job
    publishes an immutable observation and its raw HTML evidence.
+   The latest collection status remains visible after reloading. If a first
+   collection fails, no price history, competitors or analysis inputs exist yet;
+   registration alone does not capture product data. Check the displayed error
+   and source marketplace. A blocked marketplace pauses collection during its
+   cooldown. Changing marketplace means registering a separate product identity;
+   untracking the mistaken registration retains its job history.
 3. **History:** collect again on later visits. The product's window/currency
    selectors show actual capture history and minimum/maximum/average/change.
    Three separate successful collection jobs produce three capture points, even
@@ -169,6 +175,12 @@ of current availability. Swagger describes the request/response and error shapes
 - Failed model validation/provider error: no unsupported claims are published.
   Review configuration and retry deliberately. Model text is interpretation,
   even when schema validation succeeds.
+  Groq receives compact listing facts for the full saved cohort, while complete
+  provenance remains in the frozen local input. Output is bounded to 2,048 tokens;
+  GPT-OSS uses low reasoning effort. Provider size, quota and authentication
+  errors are reported separately. Account/model limits still apply; consult
+  [Groq's rate limits](https://console.groq.com/docs/rate-limits). Resolving a
+  challenge in a normal browser does not share that session with the worker.
 - Database unavailable: inspect PostgreSQL health and logs. Leases permit recovery
   after interrupted jobs. Never reset a persistent volume to work around an error.
 

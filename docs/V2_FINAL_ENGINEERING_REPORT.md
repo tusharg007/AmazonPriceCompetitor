@@ -1,7 +1,11 @@
 # V2 final engineering report
 
 Verification date: 2026-10-07, Asia/Calcutta. Implementation phases are complete;
-the external-provider and seven-day live-demo checks listed below remain open.
+the seven-day live-demo check listed below remains open. The subsequent collection
+failure investigation verified a real Groq analysis; see
+[the follow-up report](V2_COLLECTION_FAILURE_FIX.md) for current test results and
+the live collection/analysis identifiers. The Phase 8 verification below is retained
+as its original checkpoint record.
 Commits are local only. No cloud deployment or remote CI success is claimed.
 
 ## Completed phases and checkpoints
@@ -193,12 +197,11 @@ Remaining accepted/non-blocking engineering limits:
 - Recharts 2 and ESLint 9 have future maintenance/deprecation considerations; audits
   currently report no known vulnerabilities. Upgrading unrelated frameworks is deferred.
 
-**Open live-demo gates:** no Groq key was configured, so provider integration is
-verified with controlled test responses rather than an actual service call. A live
-analysis additionally needs current confirmed competitor evidence. Six same-day
-native captures and one separate Docker capture do **not** establish seven days of
-history. The plan's seven-day and real-provider browser-demo criteria remain pending
-external credentials, suitable actual data and elapsed time. Do not mark them passed.
+**Live-demo gates:** the subsequent follow-up completed a real Groq analysis over
+the corrected Amazon India baseline and 20 confirmed saved candidates, including
+browser inspection of its source evidence. The real-provider gate is now verified.
+Same-day native/Docker captures do **not** establish seven days of history. The
+seven-day criterion remains pending genuine observations across elapsed days.
 
 ## Truthful interview/resume claims
 
@@ -211,5 +214,5 @@ tested failure, cancellation, idempotency and migration boundaries.
 
 It does not support claiming production customers, measured large-scale throughput,
 guaranteed Amazon access, CAPTCHA circumvention, measured AI accuracy, seven-day
-history already collected, a verified live Groq call in this session, or public
+history already collected or public
 deployment. Follow V2_DEMO_GUIDE.md to run the finished local implementation.

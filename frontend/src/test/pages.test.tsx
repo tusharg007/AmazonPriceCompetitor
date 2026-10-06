@@ -134,6 +134,53 @@ describe("pages and contracts", () => {
       "Product not found",
     );
   });
+  it("explains a persisted CAPTCHA failure after reload and pauses collection during cooldown", async () => {
+    const job = {
+      id: "blocked-job",
+      product_id: 1,
+      kind: "scrape_product",
+      status: "failed",
+      progress: 100,
+      attempts: 1,
+      max_attempts: 2,
+      error_code: "blocked",
+      error_message: "Amazon bot challenge / CAPTCHA detected.",
+      created_at: product.created_at,
+      finished_at: product.created_at,
+      result: {},
+    };
+    server.use(
+      http.get("*/api/products/1", () =>
+        HttpResponse.json({
+          ...product,
+          title: null,
+          latest_collection_job: job,
+          collection_retry_after_seconds: 120,
+        }),
+      ),
+      http.get("*/api/products/1/observations", () => HttpResponse.json([])),
+      http.get("*/api/products/1/competitors", () => HttpResponse.json([])),
+      http.get("*/api/jobs/blocked-job", () => HttpResponse.json(job)),
+    );
+    mount("/products/1");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Collection blocked by Amazon",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "No product data was captured",
+    );
+    expect(screen.getByText("No product data collected")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Collection paused" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Analyze saved evidence" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("link", { name: "Check listing on amazon.com" }),
+    ).toHaveAttribute("href", "https://www.amazon.com/dp/B09XS7JWHH");
+    expect(await screen.findByText("Job failed")).toBeInTheDocument();
+  });
   it("renders failed jobs and bounded attempts", async () => {
     server.use(
       http.get("*/api/jobs", () =>

@@ -280,6 +280,9 @@ class BrowserCollector(ABC):
                 except (PlaywrightError, TimeoutError, RuntimeError):
                     is_vis = False
                 if is_vis:
+                    logger.warning("Amazon access restriction detected: %s", selector)
+                    if selector == "#authportal-main-section":
+                        raise ScrapingBlockedError("Amazon requires sign-in before collection.")
                     raise ScrapingBlockedError("Amazon bot challenge / CAPTCHA detected.")
 
         title = (await page.title()).lower()
