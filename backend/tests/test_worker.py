@@ -121,7 +121,7 @@ async def test_startup_failure_is_recorded_and_retry_budget_consumed(
 
 
 @pytest.mark.asyncio
-async def test_raw_discovery_partial_does_not_add_matches_or_track_candidates(
+async def test_discovery_partial_matches_only_saved_candidates_without_tracking_them(
     async_client, test_engine, test_settings, db_session
 ):
     _, job = await enqueue(async_client, scan=True)
@@ -138,7 +138,11 @@ async def test_raw_discovery_partial_does_not_add_matches_or_track_candidates(
     assert len(detail["result"]["evidence_artifact_ids"]) == 4
     assert (await async_client.get("/api/products")).json()["total"] == 1
     assert (await async_client.get("/api/products?tracked_only=false")).json()["total"] == 2
-    assert await db_session.scalar(select(func.count(CompetitorRelationship.id))) == 0
+    assert await db_session.scalar(select(func.count(CompetitorRelationship.id))) == 1
+    relationship = (await db_session.scalars(select(CompetitorRelationship))).one()
+    assert relationship.match_status == "ambiguous"
+    assert relationship.evidence_summary["baseline_observation_id"]
+    assert relationship.evidence_summary["candidate_observation_id"]
     assert [call[0] for call in collector.calls] == ["B09XS7JWHH", "B000000002", "B000000003"]
     for candidate in detail["result"]["candidates"]:
         metadata = (

@@ -30,7 +30,7 @@ def config() -> Config:
 
 
 def test_migration_import_and_single_head() -> None:
-    assert ScriptDirectory.from_config(config()).get_heads() == ["002_active_job_dedup"]
+    assert ScriptDirectory.from_config(config()).get_heads() == ["003_match_evidence"]
     spec = importlib.util.spec_from_file_location(
         "phase1_initial", BACKEND / "alembic/versions/001_initial_schema.py"
     )
@@ -57,7 +57,7 @@ def test_sqlite_upgrade_constraints_orm_match_and_downgrade(monkeypatch, test_se
     with sqlite3.connect(db_file) as db:
         db.execute("PRAGMA foreign_keys=ON")
         assert db.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "002_active_job_dedup",
+            "003_match_evidence",
         )
         db.execute("INSERT INTO products(asin,domain) VALUES ('B000000001','com')")
         row = (

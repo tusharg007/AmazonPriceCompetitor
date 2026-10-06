@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from typing import Any
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeout
@@ -22,6 +22,7 @@ from app.models.enums import ScrapeErrorCode
 from app.models.schemas import EvidenceArtifactRead, ExtractedProduct, ExtractedSearchCandidate
 from app.repository import catalog, jobs, observations
 from app.services.evidence import read_verified_evidence
+from app.services.matching import match_candidate
 
 
 def collection_error(exc: Exception) -> ScrapingError:
@@ -138,6 +139,13 @@ class CollectionService:
                 for candidate in result["candidates"]:
                     if candidate["asin"] == asin:
                         candidate.update(product_id=product.id, observation_id=identifier)
+                        await match_candidate(
+                            session,
+                            UUID(result["baseline_observation_id"]),
+                            observation,
+                            self.claim.id,
+                            candidate | {"search_query": result.get("search_query", "")},
+                        )
             job.result = deepcopy(result)
             job.progress = max(job.progress, 30)
         self.result = result

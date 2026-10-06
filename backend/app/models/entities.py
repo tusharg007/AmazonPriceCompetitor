@@ -232,6 +232,49 @@ class CompetitorRelationship(Base):
     )
 
 
+class MatchEvidence(Base):
+    """Append-only record of the exact observations and inputs used by a decision."""
+
+    __tablename__ = "match_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "match_id",
+            "baseline_observation_id",
+            "candidate_observation_id",
+            "policy_version",
+            name="uq_match_capture_policy",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    match_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("competitor_relationships.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    baseline_observation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("product_observations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    candidate_observation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("product_observations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("collection_jobs.id", ondelete="SET NULL")
+    )
+    evidence_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="attribute_comparison"
+    )
+    policy_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    evidence_data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class CollectionJob(Base):
     """Collection job tracking async scraping task execution, lease state, and diagnostics."""
 

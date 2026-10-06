@@ -1,4 +1,4 @@
-"""Read stored relationships and enqueue discovery; no matching implementation."""
+"""Read auditable scored competitor relationships and enqueue discovery."""
 
 from typing import Annotated
 

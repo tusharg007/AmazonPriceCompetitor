@@ -38,6 +38,9 @@ async def append_observation(
         return existing
     artifact = await save_artifact(session, evidence)
     values = extracted.model_dump(exclude={"asin", "domain", "title", "brand", "provenance"})
+    values["raw_metadata"] = dict(values["raw_metadata"]) | {
+        "_listing": {"title": extracted.title, "brand": extracted.brand}
+    }
     row = ProductObservation(
         **values,
         product_id=product.id,
